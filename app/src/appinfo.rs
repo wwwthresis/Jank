@@ -7,7 +7,7 @@ use psxcore::version::{AppVersion, Channel};
 
 pub const PRODUCT: &str = "Jank!";
 pub const TAGLINE: &str = "A studio for low-poly and PSX-style models";
-pub const COPYRIGHT: &str = "Copyright (c) the Jank! authors. All rights reserved.";
+pub const COPYRIGHT: &str = "Copyright (c) 2026 Thresis. All rights reserved.";
 
 /// Release channel of this build. Change it together with `Cargo.toml` when a stage is promoted.
 pub const CHANNEL: Channel = Channel::Alpha;

@@ -3,6 +3,11 @@
 All notable changes to Jank! are listed here, newest first.
 Versions follow [docs/VERSIONING.md](docs/VERSIONING.md): `MAJOR.MINOR.PATCH[-channel]+BUILD`.
 
+## 0.2.0-alpha (build 31029)
+
+### Changed
+- Copyright holder and licensor are now Thresis (`LICENSE`, About page).
+
 ## 0.2.0-alpha (build 31028)
 
 ### Added
