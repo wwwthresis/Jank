@@ -1,0 +1,25 @@
+Jank! - proprietary software licence (placeholder)
+
+Copyright (c) the Jank! authors. All rights reserved.
+
+This source code and the program built from it are the property of the Jank!
+project owner. No licence is granted to copy, modify, distribute, sublicense or
+sell this software, in source or binary form, except under a written agreement
+with the owner.
+
+Files and pictures that you create with Jank! belong to you. Jank! does not add
+a watermark to them and claims no rights over them.
+
+Third-party components keep their own licences. They are listed in
+app/assets/THIRD_PARTY_LICENSES.txt and are shown in the program under
+Help > Licences. The interface font Inter is licensed under the SIL Open Font
+License 1.1 (app/assets/fonts/Inter-LICENSE-OFL.txt).
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS
+FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS BE
+LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY ARISING FROM THE USE OF THE
+SOFTWARE.
+
+NOTE FOR THE OWNER: this is a placeholder. Replace it with the final end-user
+licence agreement (EULA) before the first public release.
