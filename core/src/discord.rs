@@ -16,9 +16,12 @@ use std::sync::mpsc::{self, Receiver, RecvTimeoutError, Sender};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
-/// Application ID of the "Jank!" application in the Discord Developer Portal. Empty until the
-/// application exists; `JANK_DISCORD_CLIENT_ID` (at build time or at run time) overrides it.
-pub const APPLICATION_ID: &str = "";
+/// Application ID of the "Jank!" application in the Discord Developer Portal (public, not a
+/// secret); `JANK_DISCORD_CLIENT_ID` (at build time or at run time) overrides it.
+pub const APPLICATION_ID: &str = "1567497552780075190";
+
+/// The button on the profile card (other people see it; Discord hides it from yourself).
+pub const GITHUB_BUTTON: (&str, &str) = ("GitHub", "https://github.com/wwwthresis/Jank/");
 
 /// Art asset keys uploaded to the Discord application (Rich Presence → Art Assets).
 pub mod assets {
@@ -585,6 +588,8 @@ mod tests {
         assert_eq!(a.details, "Working on \u{201c}Butterfly demo\u{201d}");
         assert_eq!(a.state, "Editing polygons \u{00b7} 1 vertex, 76 faces");
         assert_eq!(a.small_image, assets::EDIT);
+        i.buttons = vec![(GITHUB_BUTTON.0.into(), GITHUB_BUTTON.1.into())];
+        assert!(activity(&i).to_json().contains("\"buttons\":[{\"label\":\"GitHub\",\"url\":\"https://github.com/wwwthresis/Jank/\"}]"));
         i.show_project = false;
         i.show_activity = false;
         let a = activity(&i);
@@ -610,6 +615,8 @@ mod tests {
     fn application_id_must_be_a_snowflake() {
         // the built-in id is either empty (not configured yet) or a valid snowflake
         assert!(APPLICATION_ID.is_empty() || APPLICATION_ID.bytes().all(|b| b.is_ascii_digit()));
+        assert!((17..=20).contains(&APPLICATION_ID.len()));
+        assert!(GITHUB_BUTTON.1.starts_with("https://") && GITHUB_BUTTON.0.len() <= 32);
     }
 
     #[cfg(unix)]

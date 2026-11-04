@@ -9,6 +9,9 @@ Editing polygons · 96 vertices, 72 faces
 00:12:31 elapsed
 ```
 
+A **GitHub** button links to <https://github.com/wwwthresis/Jank/> (Discord shows buttons to
+other people only, never on your own card).
+
 The large picture is the Jank! logo, the small round badge shows the mode (Model, Edit, Texture,
 Pose, Animate, Render, Export, or a clock after five minutes without input: "Taking a break").
 
@@ -39,9 +42,10 @@ every 4 seconds (Discord allows 5 per 20 seconds) and the activity is cleared wh
    names as keys: `jank_logo`, `mode_model`, `mode_edit`, `mode_texture`, `mode_pose`,
    `mode_animate`, `mode_render`, `mode_export`, `mode_idle`. Discord may take a few minutes to
    show new assets. Regenerate them with `python3 tools/gen_discord_assets.py`.
-4. Put the Application ID into `core/src/discord.rs` (`APPLICATION_ID`), or set it when building
+4. The Application ID of the official build is `1567497552780075190` (`APPLICATION_ID` in
+   `core/src/discord.rs`). Forks can use their own: change the constant, or set it when building
    (`JANK_DISCORD_CLIENT_ID=… cargo build --release`) or when starting the program
-   (`JANK_DISCORD_CLIENT_ID=… jank`). Builds without an ID show "This build has no Discord
+   (`JANK_DISCORD_CLIENT_ID=… jank`). Builds with an empty ID show "This build has no Discord
    Application ID yet" in Settings and never touch the socket.
 
 The code is `core/src/discord.rs` (protocol, connection thread, the texts; tested against a fake

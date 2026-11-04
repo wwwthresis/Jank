@@ -3,6 +3,11 @@
 All notable changes to Jank! are listed here, newest first.
 Versions follow [docs/VERSIONING.md](docs/VERSIONING.md): `MAJOR.MINOR.PATCH[-channel]+BUILD`.
 
+## 0.2.0-alpha (build 31033)
+
+### Added
+- Discord status is live: the official Application ID is built in, and the card has a **GitHub** button (https://github.com/wwwthresis/Jank/).
+
 ## 0.2.0-alpha (build 31032)
 
 ### Added

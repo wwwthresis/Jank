@@ -74,7 +74,7 @@ impl App {
             idle: self.rpc.last_input.elapsed() > IDLE_AFTER,
             since: prefs.show_time.then_some(self.rpc.since),
             version: crate::appinfo::version_string().split('+').next().unwrap_or_default().to_string(),
-            buttons: vec![],
+            buttons: vec![(discord::GITHUB_BUTTON.0.into(), discord::GITHUB_BUTTON.1.into())],
         };
         let a = discord::activity(&info);
         if self.rpc.last.as_ref() != Some(&a) {
