@@ -58,6 +58,75 @@ pub enum CommandId {
     OpenSettings,
     OpenAbout,
     OpenLicenses,
+    WhatsNew,
+    RadialMenu,
+    // Modeling (object level)
+    EditModeToggle,
+    BooleanUnion,
+    BooleanDifference,
+    BooleanIntersect,
+    AddReference,
+    ToggleIk,
+    // Mesh Edit mode
+    MeshSelectVertex,
+    MeshSelectEdge,
+    MeshSelectFace,
+    MeshGrab,
+    MeshRotate,
+    MeshScale,
+    MeshExtrude,
+    MeshInset,
+    MeshBevel,
+    MeshBevelVertices,
+    MeshLoopCut,
+    MeshKnife,
+    MeshMerge,
+    MeshDelete,
+    MeshDissolve,
+    MeshFill,
+    MeshConnect,
+    MeshSelectAll,
+    MeshSelectNone,
+    MeshSelectInvert,
+    MeshSelectLinked,
+    MeshSelectMore,
+    MeshSelectLess,
+    MeshHide,
+    MeshHideOthers,
+    MeshReveal,
+    MeshDuplicate,
+    MeshSplit,
+    MeshSeparate,
+    MeshRecalcNormals,
+    MeshFlipNormals,
+    MeshTriangulate,
+    MeshTrisToQuads,
+    MeshShrinkFatten,
+    MeshLoopSlide,
+    MeshSubdivide,
+    MeshSmooth,
+    MeshBridge,
+    MeshSymmetrize,
+    MeshMarkSeam,
+    MeshClearSeam,
+    MeshUnwrap,
+    MeshXray,
+    MeshProportional,
+    MeshShadeSmooth,
+    MeshShadeFlat,
+    // Painting
+    ToolBrush,
+    ToolEraser,
+    ToolFill,
+    ToolGradient,
+    ToolPicker,
+    ToolSmudge,
+    ToolBlur,
+    SwapColors,
+    BrushSmaller,
+    BrushBigger,
+    ToggleSymmetry,
+    ToggleProjectionPaint,
 }
 
 /// Menu-like grouping used by the palette and by the shortcut editor.
@@ -70,11 +139,34 @@ pub enum Category {
     Animation,
     View,
     Application,
+    /// Only active in Edit mode (polygon editing); shadows other commands with the same key there.
+    MeshEdit,
+    /// Only active while painting (Texture mode, painting in Animate); shadows other commands there.
+    Paint,
+}
+
+/// Where a category's shortcuts are active.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub enum Context {
+    /// Everywhere (unless a context command with the same key is active).
+    Global,
+    MeshEdit,
+    Paint,
 }
 
 impl Category {
+    pub const ALL: [Category; 9] = [Category::File, Category::Edit, Category::Mode, Category::Modeling, Category::MeshEdit, Category::Paint, Category::Animation, Category::View, Category::Application];
+    pub fn context(self) -> Context {
+        match self {
+            Category::MeshEdit => Context::MeshEdit,
+            Category::Paint => Context::Paint,
+            _ => Context::Global,
+        }
+    }
     pub fn title(self) -> &'static str {
         match self {
+            Category::MeshEdit => "Edit mode",
+            Category::Paint => "Painting",
             Category::File => "File",
             Category::Edit => "Edit",
             Category::Mode => "Mode",
@@ -130,7 +222,7 @@ pub const COMMANDS: &[CommandInfo] = &[
     cmd!(WeldVertices, "model.weld", "Weld vertices", Modeling, "Merge vertices that share a position", []),
     cmd!(FlatShade, "model.flat_shade", "Flat shading", Modeling, "Give every face its own normal for a faceted look", []),
     cmd!(AutoUv, "model.auto_uv", "Automatic UV unwrap", Modeling, "Generate UV coordinates for the selected model", ["U"]),
-    cmd!(TogglePlay, "anim.play", "Play or pause", Animation, "Start or stop the animation preview", ["Space"]),
+    cmd!(TogglePlay, "anim.play", "Play or pause", Animation, "Start or stop the animation preview", ["Shift+Space"]),
     cmd!(PrevFrame, "anim.prev_frame", "Previous frame", Animation, "Go one frame back", ["Comma", "ArrowLeft"]),
     cmd!(NextFrame, "anim.next_frame", "Next frame", Animation, "Go one frame forward", ["Period", "ArrowRight"]),
     cmd!(AddFrame, "anim.add_frame", "Add frame", Animation, "Append a new frame after the current one", ["Shift+N"]),
@@ -148,6 +240,72 @@ pub const COMMANDS: &[CommandInfo] = &[
     cmd!(OpenSettings, "app.settings", "Settings", Application, "Interface scale, autosave, accessibility and shortcuts", ["Ctrl+Comma"]),
     cmd!(OpenAbout, "app.about", "About Jank!", Application, "Version, support information and credits", ["F1"]),
     cmd!(OpenLicenses, "app.licenses", "Third-party licenses", Application, "Licences of the libraries built into Jank!", []),
+    cmd!(WhatsNew, "app.whats_new", "What's new", Application, "The changes in this version of Jank!", []),
+    cmd!(RadialMenu, "app.radial_menu", "Radial menu", Application, "A ring of the most useful tools for the current mode around the mouse (hold, move, release; or tap and click)", ["Space"]),
+    cmd!(EditModeToggle, "model.edit_mode", "Edit mode (polygons)", Modeling, "Edit the vertices, edges and faces of the selected object, or go back to object mode", ["Tab"]),
+    cmd!(BooleanUnion, "model.boolean_union", "Boolean: union", Modeling, "Join the other selected object (the cutter) into the active one", []),
+    cmd!(BooleanDifference, "model.boolean_difference", "Boolean: difference", Modeling, "Cut the cutter object out of the active one", []),
+    cmd!(BooleanIntersect, "model.boolean_intersect", "Boolean: intersect", Modeling, "Keep only the part where the active object and the cutter overlap", []),
+    cmd!(AddReference, "view.add_reference", "Add reference image", View, "Place a picture in the 3D view to model or pose from (never rendered)", []),
+    cmd!(ToggleIk, "anim.ik", "Inverse kinematics on or off", Animation, "Dragging a bone end moves its parents too (IK chain)", ["Shift+I"]),
+    cmd!(MeshSelectVertex, "mesh.select_vertex", "Select vertices", MeshEdit, "Vertex select mode", ["1"]),
+    cmd!(MeshSelectEdge, "mesh.select_edge", "Select edges", MeshEdit, "Edge select mode", ["2"]),
+    cmd!(MeshSelectFace, "mesh.select_face", "Select faces", MeshEdit, "Face select mode", ["3"]),
+    cmd!(MeshGrab, "mesh.grab", "Move (grab)", MeshEdit, "Move the selection with the mouse; X/Y/Z lock an axis, type a number, click or Enter to confirm, right-click or Esc to cancel", ["G"]),
+    cmd!(MeshRotate, "mesh.rotate", "Rotate", MeshEdit, "Rotate the selection around its centre with the mouse", ["R"]),
+    cmd!(MeshScale, "mesh.scale", "Scale", MeshEdit, "Scale the selection with the mouse", ["S"]),
+    cmd!(MeshExtrude, "mesh.extrude", "Extrude", MeshEdit, "Pull new geometry out of the selected faces, edges or vertices", ["E"]),
+    cmd!(MeshInset, "mesh.inset", "Inset faces", MeshEdit, "Make a smaller copy of the selected faces inside them", ["I"]),
+    cmd!(MeshBevel, "mesh.bevel", "Bevel edges", MeshEdit, "Round or chamfer the selected edges; the wheel changes the segments", ["Ctrl+B"]),
+    cmd!(MeshBevelVertices, "mesh.bevel_vertices", "Bevel vertices", MeshEdit, "Cut the corners at the selected vertices", ["Ctrl+Shift+B"]),
+    cmd!(MeshLoopCut, "mesh.loop_cut", "Loop cut", MeshEdit, "Cut a ring of faces in half (hover an edge, the wheel adds cuts, click to place, then slide)", ["Ctrl+R"]),
+    cmd!(MeshKnife, "mesh.knife", "Knife", MeshEdit, "Draw a cut across the faces: click points, Enter to cut, Esc to cancel", ["K"]),
+    cmd!(MeshMerge, "mesh.merge", "Merge vertices", MeshEdit, "Merge the selected vertices at their centre", ["M"]),
+    cmd!(MeshDelete, "mesh.delete", "Delete", MeshEdit, "Delete the selected vertices, edges or faces (depending on the select mode)", ["X", "Delete"]),
+    cmd!(MeshDissolve, "mesh.dissolve", "Dissolve", MeshEdit, "Remove the selection but keep the surface closed", ["Ctrl+X"]),
+    cmd!(MeshFill, "mesh.fill", "Make face", MeshEdit, "Make a face or edge from the selected vertices or close a hole", ["F"]),
+    cmd!(MeshConnect, "mesh.connect", "Connect vertices", MeshEdit, "Split faces along the path between the selected vertices", ["J"]),
+    cmd!(MeshSelectAll, "mesh.select_all", "Select all / none", MeshEdit, "Select everything, or nothing if everything is selected", ["A"]),
+    cmd!(MeshSelectNone, "mesh.select_none", "Select none", MeshEdit, "Clear the selection", ["Alt+A"]),
+    cmd!(MeshSelectInvert, "mesh.select_invert", "Invert selection", MeshEdit, "Select what is not selected", ["Ctrl+I"]),
+    cmd!(MeshSelectLinked, "mesh.select_linked", "Select linked", MeshEdit, "Select everything connected to the selection (L under the mouse)", ["Ctrl+L"]),
+    cmd!(MeshSelectMore, "mesh.select_more", "Select more", MeshEdit, "Grow the selection by one ring", ["Ctrl+Equals"]),
+    cmd!(MeshSelectLess, "mesh.select_less", "Select less", MeshEdit, "Shrink the selection by one ring", ["Ctrl+Minus"]),
+    cmd!(MeshHide, "mesh.hide", "Hide selected", MeshEdit, "Hide the selection to work on what is behind it", ["H"]),
+    cmd!(MeshHideOthers, "mesh.hide_others", "Hide unselected", MeshEdit, "Hide everything except the selection", ["Shift+H"]),
+    cmd!(MeshReveal, "mesh.reveal", "Reveal hidden", MeshEdit, "Show everything that was hidden", ["Alt+H"]),
+    cmd!(MeshDuplicate, "mesh.duplicate", "Duplicate", MeshEdit, "Copy the selection and move the copy", ["Shift+D"]),
+    cmd!(MeshSplit, "mesh.split", "Split", MeshEdit, "Detach the selected faces from the rest (same object)", ["Y"]),
+    cmd!(MeshSeparate, "mesh.separate", "Separate into new object", MeshEdit, "Move the selected faces into a new object", ["P"]),
+    cmd!(MeshRecalcNormals, "mesh.recalc_normals", "Recalculate normals", MeshEdit, "Make all faces point outwards", ["Shift+N"]),
+    cmd!(MeshFlipNormals, "mesh.flip_normals", "Flip normals", MeshEdit, "Turn the selected faces inside out", []),
+    cmd!(MeshTriangulate, "mesh.triangulate", "Triangulate", MeshEdit, "Split the selected faces into triangles", ["Ctrl+T"]),
+    cmd!(MeshTrisToQuads, "mesh.tris_to_quads", "Triangles to quads", MeshEdit, "Join pairs of triangles into quads", ["Alt+J"]),
+    cmd!(MeshShrinkFatten, "mesh.shrink_fatten", "Shrink / fatten", MeshEdit, "Move the selection along its normals", ["Alt+S"]),
+    cmd!(MeshLoopSlide, "mesh.edge_slide", "Edge slide", MeshEdit, "Slide the selected edge loop along the faces next to it", ["Shift+V"]),
+    cmd!(MeshSubdivide, "mesh.subdivide", "Subdivide", MeshEdit, "Split the selected edges and faces in half", []),
+    cmd!(MeshSmooth, "mesh.smooth", "Smooth vertices", MeshEdit, "Relax the selected vertices towards their neighbours", []),
+    cmd!(MeshBridge, "mesh.bridge", "Bridge edge loops", MeshEdit, "Connect two selected edge loops with faces", []),
+    cmd!(MeshSymmetrize, "mesh.symmetrize", "Symmetrize", MeshEdit, "Mirror the +X half onto the −X half", []),
+    cmd!(MeshMarkSeam, "mesh.mark_seam", "Mark seam", MeshEdit, "Mark the selected edges as UV seams", []),
+    cmd!(MeshClearSeam, "mesh.clear_seam", "Clear seam", MeshEdit, "Remove the UV seams from the selected edges", []),
+    cmd!(MeshUnwrap, "mesh.unwrap", "Unwrap UV", MeshEdit, "Flatten the selected faces into the texture along the seams (angle-based)", ["U"]),
+    cmd!(MeshXray, "mesh.xray", "X-ray", MeshEdit, "See and select through the model", ["Alt+Z"]),
+    cmd!(MeshProportional, "mesh.proportional", "Proportional editing", MeshEdit, "Moving the selection also drags nearby vertices with a soft falloff (the wheel sets the radius)", ["O"]),
+    cmd!(MeshShadeSmooth, "mesh.shade_smooth", "Shade smooth", MeshEdit, "Smooth lighting across the selected faces", []),
+    cmd!(MeshShadeFlat, "mesh.shade_flat", "Shade flat", MeshEdit, "Faceted lighting on the selected faces", []),
+    cmd!(ToolBrush, "paint.brush", "Brush", Paint, "Paint with the brush", ["B"]),
+    cmd!(ToolEraser, "paint.eraser", "Eraser", Paint, "Erase to transparency", ["E"]),
+    cmd!(ToolFill, "paint.fill", "Fill", Paint, "Fill a region of one colour", ["F"]),
+    cmd!(ToolGradient, "paint.gradient", "Gradient", Paint, "Drag a gradient from the main to the second colour (dithered in pixel mode)", ["G"]),
+    cmd!(ToolPicker, "paint.picker", "Eyedropper", Paint, "Pick a colour from the picture", ["I"]),
+    cmd!(ToolSmudge, "paint.smudge", "Smudge", Paint, "Push colours along the stroke", []),
+    cmd!(ToolBlur, "paint.blur", "Blur", Paint, "Soften details under the brush", []),
+    cmd!(SwapColors, "paint.swap_colors", "Swap colours", Paint, "Swap the main and the second colour", ["X"]),
+    cmd!(BrushSmaller, "paint.smaller", "Smaller brush", Paint, "Make the brush smaller", ["OpenBracket"]),
+    cmd!(BrushBigger, "paint.bigger", "Bigger brush", Paint, "Make the brush bigger", ["CloseBracket"]),
+    cmd!(ToggleSymmetry, "paint.symmetry", "Symmetric painting", Paint, "Paint the mirrored side of the picture at the same time", []),
+    cmd!(ToggleProjectionPaint, "paint.projection", "Projection painting", Paint, "Paint through the screen onto whatever is visible, across UV seams", []),
 ];
 
 impl CommandId {
@@ -276,7 +434,9 @@ mod tests {
         assert_eq!(r[0].id, CommandId::OpenLicenses);
         assert!(search("zzzzzz").is_empty());
         // scattered letters in a long description must not produce a hit
-        assert!(search("mirr").iter().all(|h| h.id == CommandId::MirrorX), "{:?}", search("mirr"));
+        let m = search("mirr");
+        assert_eq!(m[0].id, CommandId::MirrorX, "{m:?}");
+        assert!(m.iter().all(|h| (h.id.title().to_lowercase() + h.id.info().description).to_lowercase().contains("mirr")), "{m:?}");
         assert_eq!(search("").len(), COMMANDS.len());
     }
 

@@ -3,11 +3,11 @@ use crate::icons::Icon;
 use crate::theme::*;
 use crate::widgets::{dim, toggle, Btn};
 use crate::{compat, App};
-use eframe::egui::{self, pos2, vec2, Align2, Color32, Context, Rect, ScrollArea, Sense, TopBottomPanel};
+use eframe::egui::{self, pos2, vec2, Align2, Context, Rect, ScrollArea, Sense, TopBottomPanel};
 
 impl App {
     pub fn timeline_panel(&mut self, ctx: &Context) {
-        let mut panel = TopBottomPanel::bottom("timeline").resizable(true).default_height(self.settings.layout.timeline_height).height_range(150.0..=420.0).frame(compat::frame(BG1, 8.0).stroke(compat::stroke(1.0, SHADE)));
+        let mut panel = TopBottomPanel::bottom("timeline").resizable(true).default_height(self.settings.layout.timeline_height).height_range(150.0..=420.0).frame(compat::frame(BG1(), 8.0).stroke(compat::stroke(1.0, SHADE())));
         if self.layout_reset {
             panel = panel.exact_height(self.settings.layout.timeline_height);
         }
@@ -63,7 +63,7 @@ impl App {
                 if Btn::new("Copy").icon(Icon::Copy).tip("Duplicates the frame including its drawing").show(ui).clicked() {
                     self.ed.duplicate_frame();
                 }
-                if Btn::new("").icon(Icon::Trash).accent(DANGER).enabled(n > 1).tip("Delete frame").show(ui).clicked() {
+                if Btn::new("").icon(Icon::Trash).accent(DANGER()).enabled(n > 1).tip("Delete frame").show(ui).clicked() {
                     self.ed.delete_frame();
                 }
                 if Btn::new("←").enabled(cur > 0).size(vec2(34.0, 34.0)).tip("Move frame left").show(ui).clicked() {
@@ -86,8 +86,16 @@ impl App {
                 if ui.add(egui::TextEdit::singleline(&mut nt).hint_text("frame note").desired_width(180.0)).changed() {
                     self.cont(|ed| ed.set_frame_note(&nt));
                 }
+                ui.add_space(8.0);
+                if crate::widgets::tab(ui, "Curves", Some(Icon::Graph), self.graph.open, "Graph editor: animation curves of the bones, drag keys to change them", 0.0).clicked() {
+                    self.graph.open = !self.graph.open;
+                }
             });
-            self.frame_strip(ui);
+            if self.graph.open {
+                self.graph_editor(ui);
+            } else {
+                self.frame_strip(ui);
+            }
         });
         self.track_width(crate::Panel::Timeline, shown.response.rect.height());
     }
@@ -117,9 +125,9 @@ impl App {
                     let p = ui.painter();
                     let head = Rect::from_min_size(rect.min, vec2(w, 18.0));
                     let cel = Rect::from_min_max(pos2(rect.min.x, head.max.y + 1.0), rect.max);
-                    p.rect_filled(head, compat::cr(0.0), if sel { accent() } else { mix(BG0, BG2, hov) });
-                    compat::text(p, head.center(), Align2::CENTER_CENTER, &(i + 1).to_string(), 11.5, if sel { Color32::WHITE } else { DIM });
-                    let col_fill = if sel { mix(BG2, accent(), 0.22) } else { mix(BG2, BG3, hov) };
+                    p.rect_filled(head, compat::cr(0.0), if sel { accent() } else { mix(BG0(), BG2(), hov) });
+                    compat::text(p, head.center(), Align2::CENTER_CENTER, &(i + 1).to_string(), 11.5, if sel { BRIGHT() } else { DIM() });
+                    let col_fill = if sel { mix(BG2(), accent(), 0.22) } else { mix(BG2(), BG3(), hov) };
                     crate::widgets::bevel(p, cel.shrink2(vec2(1.0, 0.0)), accent(), hov, false, false);
                     p.rect_filled(cel.shrink2(vec2(2.0, 2.0)), compat::cr(1.0), col_fill);
                     if sel {
@@ -128,12 +136,12 @@ impl App {
                     // the cel dot: filled when the frame has its own drawing, ring otherwise
                     let dot = pos2(cel.min.x + 12.0, cel.min.y + 13.0);
                     if *hand {
-                        p.circle_filled(dot, 4.5, if sel { Color32::WHITE } else { TEXT });
+                        p.circle_filled(dot, 4.5, if sel { BRIGHT() } else { TEXT() });
                     } else {
-                        p.circle_stroke(dot, 4.0, crate::compat::stroke(1.5, if sel { Color32::WHITE } else { DIM }));
+                        p.circle_stroke(dot, 4.0, crate::compat::stroke(1.5, if sel { BRIGHT() } else { DIM() }));
                     }
                     if *hold > 1 {
-                        compat::text(p, pos2(cel.max.x - 6.0, cel.min.y + 6.0), Align2::RIGHT_TOP, &format!("×{hold}"), 11.0, DIM);
+                        compat::text(p, pos2(cel.max.x - 6.0, cel.min.y + 6.0), Align2::RIGHT_TOP, &format!("×{hold}"), 11.0, DIM());
                     }
                     if *tween {
                         // a tween is an arrow that reaches into the next cel
@@ -142,10 +150,10 @@ impl App {
                         p.add(egui::Shape::convex_polygon(vec![pos2(cel.max.x + 2.0, y - 3.5), pos2(cel.max.x + 6.0, y), pos2(cel.max.x + 2.0, y + 3.5)], accent(), egui::Stroke::NONE));
                     }
                     if *hand_only {
-                        crate::icons::draw(p, Icon::EyeOff, pos2(cel.max.x - 12.0, cel.max.y - 10.0), 16.0, DIM);
+                        crate::icons::draw(p, Icon::EyeOff, pos2(cel.max.x - 12.0, cel.max.y - 10.0), 16.0, DIM());
                     }
                     if !emo.is_empty() {
-                        compat::text(p, pos2(cel.min.x + 6.0, cel.max.y - 5.0), Align2::LEFT_BOTTOM, &emo.chars().take(((w - 10.0) / 7.0) as usize).collect::<String>(), 11.0, mix(accent(), Color32::WHITE, 0.4));
+                        compat::text(p, pos2(cel.min.x + 6.0, cel.max.y - 5.0), Align2::LEFT_BOTTOM, &emo.chars().take(((w - 10.0) / 7.0) as usize).collect::<String>(), 11.0, mix(accent(), BRIGHT(), 0.4));
                     }
                     if resp.clicked() {
                         goto = Some(i);

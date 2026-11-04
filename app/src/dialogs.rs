@@ -20,6 +20,8 @@ pub enum Purpose {
     /// Load an image into a new scene layer (true = behind the 3D objects).
     ImportSceneLayer(bool),
     ExportFolder,
+    /// A reference picture for the 3D view.
+    AddReference,
 }
 #[derive(Clone, Copy, PartialEq)]
 pub enum After {
@@ -47,6 +49,7 @@ pub enum Dialog {
     Palette(crate::commands_ui::PaletteState),
     Settings(crate::commands_ui::SettingsState),
     Recover(psxcore::recovery::Snapshot),
+    WhatsNew,
 }
 
 fn home_or_cwd() -> PathBuf {
@@ -62,6 +65,7 @@ pub fn browser(purpose: Purpose) -> Dialog {
         Purpose::SaveTexture(_) => (&["png"], "texture.png"),
         Purpose::ImportSceneLayer(_) => (&["png", "jpg", "jpeg", "bmp", "tga", "ppm"], ""),
         Purpose::ExportFolder => (&[], ""),
+        Purpose::AddReference => (&["png", "jpg", "jpeg", "bmp", "tga", "ppm"], ""),
     };
     let fb = FileBrowser::new(&home_or_cwd()).with_filter(filter);
     Dialog::Browser(Box::new(BrowserDlg { purpose, fb, name: name.to_string() }))
@@ -225,7 +229,7 @@ impl App {
         ui.add_space(6.0);
         if let Some(job) = &self.job {
             ui.add(egui::ProgressBar::new(job.progress()).show_percentage());
-            if Btn::new("Cancel").icon(Icon::Trash).accent(DANGER).size(vec2(ui.available_width(), 34.0)).show(ui).clicked() {
+            if Btn::new("Cancel").icon(Icon::Trash).accent(DANGER()).size(vec2(ui.available_width(), 34.0)).show(ui).clicked() {
                 job.cancel();
             }
         } else if Btn::new("Save").icon(Icon::Export).accent(accent()).enabled(!busy && frames > 0).size(vec2(ui.available_width(), 42.0)).show(ui).clicked() {
@@ -306,6 +310,7 @@ impl App {
             Dialog::Palette(p) => self.palette_dialog(ctx, p),
             Dialog::Settings(s) => self.settings_dialog(ctx, s),
             Dialog::Recover(r) => self.recover_dialog(ctx, r),
+            Dialog::WhatsNew => self.whats_new_dialog(ctx),
         };
     }
 
@@ -342,7 +347,7 @@ impl App {
                         dim(ui, "Channels are ordered alpha < beta < rc < stable. The build number grows with every build and is the number to quote in a bug report.");
                         dim(ui, "Project files carry their own format number; older files always open, newer ones are refused with a clear message.");
                     });
-                    section(ui, "Support", WARN, |ui| {
+                    section(ui, "Support", WARN(), |ui| {
                         let report = crate::appinfo::support_report();
                         ui.label(egui::RichText::new(report.as_str()).monospace().size(12.5));
                         if Btn::new("Copy to clipboard").tip("Copy the version and platform text for a bug report").size(vec2(170.0, 30.0)).show(ui).clicked() {
@@ -393,7 +398,7 @@ impl App {
         egui::Window::new("Model loaded with warnings").collapsible(false).resizable(false).default_pos(compat::centered_pos(ctx, vec2(440.0, 220.0))).show(ctx, |ui| {
             ui.set_min_width(420.0);
             for l in &w {
-                ui.colored_label(WARN, l.as_str());
+                ui.colored_label(WARN(), l.as_str());
             }
             if Btn::new("OK").size(vec2(ui.available_width(), 34.0)).show(ui).clicked() {
                 open = false;
@@ -416,7 +421,7 @@ impl App {
                         result = Some(browser(Purpose::SaveProject));
                     }
                 }
-                if Btn::new("Discard").accent(DANGER).show(ui).clicked() {
+                if Btn::new("Discard").accent(DANGER()).show(ui).clicked() {
                     result = None;
                     self.proceed(ctx, after);
                 }
@@ -449,6 +454,7 @@ impl App {
             Purpose::SaveTexture(_) => "Save texture",
             Purpose::ImportSceneLayer(_) => "Load image into a new layer",
             Purpose::ExportFolder => "Output folder",
+            Purpose::AddReference => "Add reference picture",
         };
         let saving = matches!(b.purpose, Purpose::SaveProject | Purpose::SaveTexture(_));
         let folder = b.purpose == Purpose::ExportFolder;
@@ -479,7 +485,7 @@ impl App {
                 });
                 ui.vertical(|ui| {
                     if let Some(e) = &b.fb.error {
-                        ui.colored_label(DANGER, e.as_str());
+                        ui.colored_label(DANGER(), e.as_str());
                     }
                     let mut go: Option<String> = None;
                     let mut pick: Option<String> = None;
@@ -521,7 +527,7 @@ impl App {
                 let exists = saving && target.exists();
                 let label = if folder { "Select this folder" } else if saving { if exists { "Replace" } else { "Save" } } else { "Open" };
                 let ok = folder || !b.name.trim().is_empty();
-                if Btn::new(label).icon(if saving || folder { Icon::Save } else { Icon::Open }).accent(if exists { WARN } else { accent() }).enabled(ok).show(ui).clicked() {
+                if Btn::new(label).icon(if saving || folder { Icon::Save } else { Icon::Open }).accent(if exists { WARN() } else { accent() }).enabled(ok).show(ui).clicked() {
                     chosen = Some(if folder { b.fb.dir.clone() } else { target });
                 }
                 if Btn::new("Cancel").show(ui).clicked() {
@@ -582,6 +588,10 @@ impl App {
                 }
             }
             Purpose::ExportFolder => self.export.dir = path.to_path_buf(),
+            Purpose::AddReference => match self.ed.ref_add_path(path) {
+                Ok(_) => self.info("Reference picture added (it is never rendered)"),
+                Err(e) => self.error(e),
+            },
         }
     }
 
@@ -599,8 +609,8 @@ impl App {
         egui::Area::new(egui::Id::new("jank_toasts")).order(egui::Order::Tooltip).interactable(false).anchor(Align2::RIGHT_BOTTOM, vec2(-16.0, -16.0)).show(ctx, |ui| {
             ui.set_max_width(400.0);
             for t in &self.toasts {
-                let col = if t.kind == ToastKind::Error { DANGER } else { accent() };
-                compat::frame(BG2, 12.0).show(ui, |ui| {
+                let col = if t.kind == ToastKind::Error { DANGER() } else { accent() };
+                compat::frame(BG2(), 12.0).show(ui, |ui| {
                     ui.set_max_width(376.0);
                     ui.colored_label(col, t.text.as_str());
                 });

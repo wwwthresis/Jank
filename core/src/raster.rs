@@ -238,6 +238,82 @@ impl Frame {
         let v = (p0 * v0.uv[1] + p1 * v1.uv[1] + p2 * v2.uv[1]) / den;
         Hit { obj: t.obj, mesh: t.mesh, tri: t.tri, u, v }
     }
+    /// (object, mesh, triangle) of an entry of `tri_at`, without the UV work of `hit_at`.
+    pub fn tri_key(&self, ti: u32) -> Option<(u16, u16, u32)> {
+        self.tris.get(ti as usize).map(|t| (t.obj, t.mesh, t.tri))
+    }
+    /// Linear view depth at a pixel (`None` for the background).
+    pub fn view_depth(&self, x: i32, y: i32, near: f32, far: f32) -> Option<f32> {
+        if x < 0 || y < 0 || x >= self.w as i32 || y >= self.h as i32 {
+            return None;
+        }
+        let z = self.depth[(y as u32 * self.w + x as u32) as usize];
+        if !z.is_finite() || self.tri_at[(y as u32 * self.w + x as u32) as usize] == NO_TRI {
+            return None;
+        }
+        Some(2.0 * far * near / ((far + near) - z * (far - near)))
+    }
+    /// An RGBA picture (same size as the frame) that highlights pixels: `tint(obj, mesh, tri)`
+    /// returns a colour (alpha 0 = nothing) per triangle; `outline` draws a border of `width`
+    /// pixels around everything of the listed objects in the given colours.
+    pub fn overlay(&self, tint: &dyn Fn(u16, u16, u32) -> [u8; 4], outline: &[(u16, [u8; 4])], width: i32) -> Vec<u8> {
+        let (w, h) = (self.w as usize, self.h as usize);
+        let mut out = vec![0u8; w * h * 4];
+        let mut cache: std::collections::HashMap<u32, [u8; 4]> = std::collections::HashMap::new();
+        let obj_at = |i: usize| self.tri_at.get(i).and_then(|&t| self.tris.get(t as usize)).map(|t| t.obj);
+        for i in 0..w * h {
+            let ti = self.tri_at[i];
+            if ti == NO_TRI {
+                continue;
+            }
+            let c = *cache.entry(ti).or_insert_with(|| self.tris.get(ti as usize).map_or([0; 4], |t| tint(t.obj, t.mesh, t.tri)));
+            if c[3] > 0 {
+                out[i * 4..i * 4 + 4].copy_from_slice(&c);
+            }
+        }
+        for (id, col) in outline {
+            // bounding box of the object's pixels, grown by the width
+            let (mut x0, mut y0, mut x1, mut y1) = (usize::MAX, usize::MAX, 0usize, 0usize);
+            let mut mask = vec![false; w * h];
+            for i in 0..w * h {
+                if obj_at(i) == Some(*id) {
+                    mask[i] = true;
+                    let (x, y) = (i % w, i / w);
+                    x0 = x0.min(x);
+                    y0 = y0.min(y);
+                    x1 = x1.max(x);
+                    y1 = y1.max(y);
+                }
+            }
+            if x0 == usize::MAX {
+                continue;
+            }
+            let wd = width.max(1) as usize;
+            let (x0, y0, x1, y1) = (x0.saturating_sub(wd), y0.saturating_sub(wd), (x1 + wd).min(w - 1), (y1 + wd).min(h - 1));
+            for y in y0..=y1 {
+                for x in x0..=x1 {
+                    let i = y * w + x;
+                    if mask[i] {
+                        continue;
+                    }
+                    let mut near = false;
+                    'n: for dy in -width..=width {
+                        for dx in -width..=width {
+                            let (nx, ny) = (x as i32 + dx, y as i32 + dy);
+                            if nx >= 0 && ny >= 0 && nx < w as i32 && ny < h as i32 && mask[ny as usize * w + nx as usize] {
+                                near = true;
+                                break 'n;
+                            }
+                        }
+                    }
+                    if near {
+                        out[i * 4..i * 4 + 4].copy_from_slice(col);
+                    }
+                }
+            }
+        }
+        out
+    }
     /// True when at least one pixel shows geometry.
     pub fn any_hit(&self) -> bool {
         self.tri_at.iter().any(|&t| t != NO_TRI)

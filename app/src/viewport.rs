@@ -1,6 +1,6 @@
 //! Central 3D viewport: shows the render, camera navigation, per-mode mouse tools and overlays.
 use crate::theme::*;
-use crate::{compat, dialogs, widgets, widgets::Btn, App, AnimTool, ModelTool, SURF_GHOST_NEXT, SURF_GHOST_PREV, SURF_VIEW};
+use crate::{compat, dialogs, widgets, widgets::Btn, App, AnimTool, ModelTool, SURF_GHOST_NEXT, SURF_GHOST_PREV, SURF_OVERLAY, SURF_VIEW};
 use eframe::egui::{self, pos2, vec2, Align2, Color32, PointerButton, Pos2, Rect, Sense, Shape, Ui};
 use psxcore::editor::{Canvas, Mode};
 use psxcore::math::Vec3;
@@ -13,6 +13,8 @@ pub enum Drag {
     Bone(usize),
     Hand(Canvas),
     MoveObject(u32),
+    /// Moving a reference picture in the screen plane.
+    Ref(usize),
 }
 
 #[derive(Default)]
@@ -32,6 +34,16 @@ pub struct VpState {
     pub drawn_key: u64,
     /// Frames still to redraw after the last input, so results applied a frame later are picked up.
     pub settle: u8,
+    /// Counts viewport redraws (the overlay is rebuilt when the picture changed).
+    pub gen: u64,
+    pub overlay_key: u64,
+    /// Object outlined because the mouse is over it.
+    pub hover_obj: Option<u32>,
+    /// Ignore the pointer until every button is up (after the radial menu closed with a click).
+    pub block_until_release: bool,
+    /// Stabilizer: smoothed brush position and the last painted pixel.
+    pub stab: (f32, f32),
+    pub stab_last: (i32, i32),
 }
 
 /// True when this frame's input may have changed the scene or the view: anything except plain
@@ -201,6 +213,7 @@ impl App {
             }
             self.perf.note_draw(t0.elapsed().as_secs_f32() * 1000.0);
             self.vp.drawn_key = key;
+            self.vp.gen = self.vp.gen.wrapping_add(1);
             if self.vp.settle > 0 {
                 self.vp.settle -= 1;
                 ctx.request_repaint();
@@ -246,7 +259,7 @@ impl App {
         }
 
         let painter = ui.painter().with_clip_rect(rect);
-        painter.rect_filled(rect, compat::cr(0.0), BG0);
+        painter.rect_filled(rect, compat::cr(0.0), VIEWPORT());
         // the picture fills the whole widget: `sc` is how many screen points one drawn pixel covers
         let img = rect;
         let sc = rect.width() / w as f32;
@@ -261,9 +274,18 @@ impl App {
                 }
             }
         }
+        // hover outline and Edit-mode face tint
+        if self.update_overlay(&ctx, img, sc, w, h) {
+            if let Some(id) = self.surf[SURF_OVERLAY].id() {
+                painter.image(id, img, full, Color32::WHITE);
+            }
+        }
 
+        self.vp_width = img.width();
+        self.edui.view = (w, h);
         self.vp_input(&ctx, &resp, img, sc, w, h);
         self.vp_overlays(&painter, img, sc, w, h);
+        self.edit_overlays(&painter, img, sc);
         self.gizmo_draw(&painter, img, sc, w, h);
         self.gizmo_bar(&ctx, img);
         self.preview_ui(&ctx, img);
@@ -284,9 +306,9 @@ impl App {
         ];
         let pos = pos2(img.max.x - 10.0, img.min.y + 10.0);
         let bg = Rect::from_min_size(pos2(pos.x - 262.0, pos.y - 4.0), vec2(266.0, 14.0 * 3.0 + 10.0));
-        p.rect_filled(bg, compat::cr(2.0), alpha(BG0, 215));
+        p.rect_filled(bg, compat::cr(2.0), alpha(BG0(), 215));
         for (i, l) in lines.iter().enumerate() {
-            compat::text(p, pos + vec2(0.0, i as f32 * 14.0), Align2::RIGHT_TOP, l, 12.0, TEXT);
+            compat::text(p, pos + vec2(0.0, i as f32 * 14.0), Align2::RIGHT_TOP, l, 12.0, TEXT());
         }
     }
 
@@ -295,9 +317,20 @@ impl App {
         let hover = resp.hovered();
         let to_px = |p: Pos2| (((p.x - img.min.x) / sc).floor() as i32, ((p.y - img.min.y) / sc).floor() as i32);
         let render_mode = self.ed.mode == Mode::Render;
+        if self.vp.block_until_release {
+            if !ctx.input(|i| i.pointer.any_down()) {
+                self.vp.block_until_release = false;
+            }
+            return;
+        }
+        if self.radial.is_some() {
+            return;
+        }
+        // a running Edit-mode tool uses the right button (cancel) and the wheel (segments)
+        let modal = self.ed.edit_drag_active().is_some();
 
         // navigation: middle/right button or Alt+left to orbit; Shift pans; the wheel zooms
-        let nav = resp.dragged_by(PointerButton::Middle) || resp.dragged_by(PointerButton::Secondary) || (resp.dragged_by(PointerButton::Primary) && mods.alt);
+        let nav = resp.dragged_by(PointerButton::Middle) || (!modal && resp.dragged_by(PointerButton::Secondary)) || (resp.dragged_by(PointerButton::Primary) && mods.alt);
         if nav {
             let d = resp.drag_delta();
             if mods.shift {
@@ -308,17 +341,22 @@ impl App {
             }
             self.ed.through_camera = false;
         }
-        if hover {
+        let wheel_taken = (modal && (self.ed.edit.as_ref().is_some_and(|s| s.proportional) || self.ed.edit_drag_active().is_some_and(|d| d.kind == psxcore::editor::MeshDragKind::Bevel)))
+            || (self.ed.edit_active() && self.edui.tool == crate::editui::EditTool::LoopCut && (mods.ctrl || mods.command));
+        if hover && !wheel_taken {
             let s = compat::scroll_y(ctx);
             if s != 0.0 {
                 self.ed.view.zoom(s * 0.05 * self.settings.zoom_speed);
                 self.ed.through_camera = false;
             }
         }
+        if !render_mode && self.edit_input(ctx, resp, img, sc, w, h) {
+            return;
+        }
         if render_mode || mods.alt {
             return;
         }
-        if self.vp.drag.is_none() && self.gizmo_input(ctx, img, sc, w, h, hover) {
+        if self.vp.drag.is_none() && !self.ed.edit_active() && self.gizmo_input(ctx, img, sc, w, h, hover) {
             return;
         }
 
@@ -355,7 +393,18 @@ impl App {
         let (x, y) = px;
         match self.ed.mode {
             Mode::Model => match self.model_tool {
-                ModelTool::Select => self.ed.click_select(&self.rend.frame, x, y, shift),
+                ModelTool::Select => {
+                    // empty background: a reference picture may be under the mouse
+                    if self.ed.pick_info(self.rend.frame.hit_at(x, y)).is_none() {
+                        if let Some(i) = self.ed.ref_pick(x as f32 + 0.5, y as f32 + 0.5, w, h) {
+                            self.ed.selected_ref = Some(i);
+                            self.ed.begin_group();
+                            self.vp.drag = Some(Drag::Ref(i));
+                            return;
+                        }
+                    }
+                    self.ed.click_select(&self.rend.frame, x, y, shift)
+                }
                 ModelTool::Sculpt => {
                     if self.ed.sculpt_begin(&self.rend.frame, x, y) {
                         self.vp.drag = Some(Drag::Sculpt);
@@ -402,6 +451,8 @@ impl App {
         }
     }
     fn begin_paint(&mut self, px: (i32, i32)) {
+        self.vp.stab = (px.0 as f32, px.1 as f32);
+        self.vp.stab_last = px;
         if self.ed.paint_press(&self.rend.frame, px.0, px.1) {
             if !matches!(self.ed.brush.tool, psxcore::paint::Tool::Picker) {
                 self.remember_color();
@@ -429,7 +480,20 @@ impl App {
         let k = 2.0 * (cam.target - cam.eye).length() * (cam.fov_y * 0.5).tan() / h.max(1) as f32;
         match drag {
             Drag::Paint => {
-                self.ed.paint_drag(&self.rend.frame, last, cur);
+                let s = self.settings.stabilizer;
+                if s <= 0.0 || !self.ed.brush.tool.is_continuous() {
+                    self.ed.paint_drag(&self.rend.frame, last, cur);
+                } else {
+                    // Krita-style stabilizer: the brush trails behind the mouse on a soft string
+                    let k = 1.0 - s * 0.92;
+                    self.vp.stab.0 += (cur.0 as f32 - self.vp.stab.0) * k;
+                    self.vp.stab.1 += (cur.1 as f32 - self.vp.stab.1) * k;
+                    let np = (self.vp.stab.0.round() as i32, self.vp.stab.1.round() as i32);
+                    if np != self.vp.stab_last {
+                        self.ed.paint_drag(&self.rend.frame, self.vp.stab_last, np);
+                        self.vp.stab_last = np;
+                    }
+                }
             }
             Drag::Hand(c) => {
                 let p = self.to_render_px(cur, _w, h);
@@ -442,6 +506,14 @@ impl App {
                     let model = self.ed.world_to_model_dir(id, world);
                     self.ed.sculpt_drag(model, self.sculpt_radius);
                 }
+            }
+            Drag::Bone(b) if self.ed.ik_chain > 0 => {
+                // inverse kinematics: the joint follows the mouse, the parent bones bend
+                self.ed.ik_drag(b, cur.0 as f32 + 0.5, cur.1 as f32 + 0.5, _w, h);
+            }
+            Drag::Ref(i) => {
+                let d = right * (dx * k) + up * (-dy * k);
+                self.ed.ref_edit(i, |r| r.transform.pos = r.transform.pos + d);
             }
             Drag::Bone(b) => {
                 // horizontal drag tilts within the screen plane, vertical drag tilts forward/back
@@ -463,13 +535,19 @@ impl App {
     }
     fn end_tool(&mut self) {
         match self.vp.drag.take() {
-            Some(Drag::Paint) => self.ed.paint_release(),
+            Some(Drag::Paint) => {
+                // with the stabilizer the stroke still ends where the mouse was let go
+                if self.settings.stabilizer > 0.0 && self.ed.brush.tool.is_continuous() && self.vp.stab_last != self.vp.last_px {
+                    self.ed.paint_drag(&self.rend.frame, self.vp.stab_last, self.vp.last_px);
+                }
+                self.ed.paint_release()
+            }
             Some(Drag::Sculpt) => self.ed.sculpt_end(),
             Some(Drag::Hand(c)) => {
                 let p = self.vp.hand_last;
                 self.ed.canvas_release(c, p);
             }
-            Some(Drag::Bone(_)) | Some(Drag::MoveObject(_)) => self.ed.end_group(),
+            Some(Drag::Bone(_)) | Some(Drag::MoveObject(_)) | Some(Drag::Ref(_)) => self.ed.end_group(),
             None => {}
         }
     }
@@ -498,14 +576,20 @@ impl App {
         }
         // corner caption
         let tris = self.ed.selected_model().map_or(0, |m| m.triangle_count());
-        let info = format!("{}   {} tris", crate::mode_label(self.ed.mode), tris);
+        let mut info = format!("{}   {} tris", crate::mode_label(self.ed.mode), tris);
+        if let Some(s) = self.edit_summary() {
+            info = s;
+        }
+        if matches!(self.ed.mode, Mode::Pose | Mode::Animate) && self.ed.ik_chain > 0 {
+            info.push_str(&format!("   IK ({} bones)", self.ed.ik_chain));
+        }
         compat::text(p, img.min + vec2(10.0, 10.0), Align2::LEFT_TOP, &info, 13.0, alpha(Color32::WHITE, 200));
         if self.ed.playing {
             compat::text(p, img.max - vec2(10.0, 10.0), Align2::RIGHT_BOTTOM, "▶", 16.0, accent());
         }
         if let Some(f) = self.ed.frame().filter(|_| matches!(self.ed.mode, Mode::Pose | Mode::Animate | Mode::Render)) {
             if !self.ed.through_camera {
-                compat::text(p, img.min + vec2(10.0, 28.0), Align2::LEFT_TOP, "free view: the frame camera is not changed", 12.0, alpha(WARN, 220));
+                compat::text(p, img.min + vec2(10.0, 28.0), Align2::LEFT_TOP, "free view: the frame camera is not changed", 12.0, alpha(WARN(), 220));
             }
             if !f.note.is_empty() {
                 compat::text(p, pos2(img.center().x, img.max.y - 12.0), Align2::CENTER_BOTTOM, &f.note, 14.0, alpha(Color32::WHITE, 220));

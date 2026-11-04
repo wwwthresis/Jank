@@ -110,7 +110,7 @@ pub fn wheel(ui: &mut Ui, hsv: &mut [f32; 3], size: f32) -> bool {
     m.add_triangle(0, 1, 2);
     m.add_triangle(0, 2, 3);
     painter.add(Shape::mesh(m));
-    crate::compat::stroke_rect(&painter, sq, 0.0, crate::compat::stroke(1.0, LINE));
+    crate::compat::stroke_rect(&painter, sq, 0.0, crate::compat::stroke(1.0, LINE()));
     // markers
     let a = hsv[0] * TAU;
     let mid = (inner + outer) * 0.5;

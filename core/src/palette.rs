@@ -231,3 +231,118 @@ mod tests {
         assert_eq!(t.px[2], [0, 0, 0, 0]);
     }
 }
+
+/// An indexed-colour picture: every pixel stores the index of a palette colour (255 = transparent),
+/// like the indexed mode of pixel-art editors. The texture keeps the resulting RGBA picture; the
+/// indices make it possible to recolour every pixel of one colour at once by editing the palette.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Indexed {
+    pub palette: Palette,
+    pub idx: Vec<u8>,
+}
+
+/// Index value of a transparent pixel.
+pub const TRANSPARENT: u8 = 255;
+
+impl Indexed {
+    /// Converts a picture to the palette (at most 255 colours are used).
+    pub fn from_texture(t: &mut Texture, mut palette: Palette) -> Indexed {
+        palette.colors.truncate(255);
+        if palette.colors.is_empty() {
+            palette.colors.push([0, 0, 0, 255]);
+        }
+        let mut ix = Indexed { palette, idx: vec![TRANSPARENT; t.px.len()] };
+        ix.sync_from(t);
+        ix
+    }
+    /// Re-reads the picture after it was painted on: every pixel takes the nearest palette colour
+    /// (pixels with alpha below 128 become transparent). Returns how many pixels changed colour.
+    pub fn sync_from(&mut self, t: &mut Texture) -> usize {
+        if self.idx.len() != t.px.len() {
+            self.idx = vec![TRANSPARENT; t.px.len()];
+        }
+        let mut cache: HashMap<Rgba, u8> = HashMap::new();
+        let mut changed = 0;
+        for (i, p) in t.px.iter_mut().enumerate() {
+            let k = if p[3] < 128 {
+                TRANSPARENT
+            } else {
+                *cache.entry(*p).or_insert_with(|| self.palette.nearest([p[0], p[1], p[2], 255]).unwrap_or(0) as u8)
+            };
+            self.idx[i] = k;
+            let new = if k == TRANSPARENT { [0, 0, 0, 0] } else { self.palette.colors[k as usize] };
+            let new = [new[0], new[1], new[2], if k == TRANSPARENT { 0 } else { 255 }];
+            if new != *p {
+                *p = new;
+                changed += 1;
+            }
+        }
+        changed
+    }
+    /// Writes the palette colours of all indices into the picture.
+    pub fn apply(&self, t: &mut Texture) {
+        for (p, &k) in t.px.iter_mut().zip(&self.idx) {
+            *p = if k == TRANSPARENT { [0, 0, 0, 0] } else { let c = self.palette.colors.get(k as usize).copied().unwrap_or([0, 0, 0, 255]); [c[0], c[1], c[2], 255] };
+        }
+    }
+    /// Changes one palette entry: every pixel that uses it changes with it.
+    pub fn set_color(&mut self, i: usize, c: Rgba, t: &mut Texture) -> bool {
+        let Some(slot) = self.palette.colors.get_mut(i) else { return false };
+        *slot = [c[0], c[1], c[2], 255];
+        self.apply(t);
+        true
+    }
+    /// Appends a colour (up to 255). Returns its index.
+    pub fn add_color(&mut self, c: Rgba) -> Option<usize> {
+        if self.palette.colors.len() >= 255 {
+            return None;
+        }
+        self.palette.colors.push([c[0], c[1], c[2], 255]);
+        Some(self.palette.colors.len() - 1)
+    }
+    /// Pixels of `from` take index `to` (merging two colours). The unused entry stays in the palette.
+    pub fn replace_index(&mut self, from: u8, to: u8, t: &mut Texture) -> usize {
+        let mut n = 0;
+        for k in &mut self.idx {
+            if *k == from {
+                *k = to;
+                n += 1;
+            }
+        }
+        self.apply(t);
+        n
+    }
+    /// How many pixels use each palette entry.
+    pub fn usage(&self) -> Vec<usize> {
+        let mut u = vec![0; self.palette.colors.len()];
+        for &k in &self.idx {
+            if let Some(c) = u.get_mut(k as usize) {
+                *c += 1;
+            }
+        }
+        u
+    }
+}
+
+#[cfg(test)]
+mod indexed_tests {
+    use super::*;
+    #[test]
+    fn indexed_recolours_by_palette_entry() {
+        let mut t = Texture::new("t", 4, 1, [0, 0, 0, 0]);
+        t.px = vec![[250, 0, 0, 255], [0, 0, 250, 255], [255, 10, 5, 255], [0, 0, 0, 0]];
+        let pal = Palette::new("p", vec![[255, 0, 0, 255], [0, 0, 255, 255]]);
+        let mut ix = Indexed::from_texture(&mut t, pal);
+        assert_eq!(ix.idx, vec![0, 1, 0, TRANSPARENT]);
+        assert_eq!(t.px[2], [255, 0, 0, 255]);
+        ix.set_color(0, [0, 255, 0, 255], &mut t);
+        assert_eq!(t.px[0], [0, 255, 0, 255]);
+        assert_eq!(t.px[2], [0, 255, 0, 255]);
+        assert_eq!(t.px[1], [0, 0, 255, 255]);
+        assert_eq!(ix.usage(), vec![2, 1]);
+        // painting an off-palette colour snaps to the nearest entry
+        t.px[1] = [10, 240, 10, 255];
+        assert_eq!(ix.sync_from(&mut t), 1);
+        assert_eq!(ix.idx[1], 0);
+    }
+}

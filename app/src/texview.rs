@@ -14,16 +14,18 @@ pub struct TexView {
     pub drag: Option<Canvas>,
     pub last_canvas: Option<Canvas>,
     pub last_size: (u32, u32),
+    /// Stabilizer: the smoothed brush position of the running stroke.
+    pub stab: (f32, f32),
 }
 impl Default for TexView {
     fn default() -> Self {
-        Self { zoom: 4.0, pan: Vec2::ZERO, show_uv: true, tex: None, drag: None, last_canvas: None, last_size: (0, 0) }
+        Self { zoom: 4.0, pan: Vec2::ZERO, show_uv: true, tex: None, drag: None, last_canvas: None, last_size: (0, 0), stab: (0.0, 0.0) }
     }
 }
 
 impl App {
     pub fn texture_panel(&mut self, ctx: &Context) {
-        let mut panel = SidePanel::left("tex2d").resizable(true).default_width(self.settings.layout.texture_width).width_range(300.0..=900.0).frame(compat::frame(BG1, 10.0));
+        let mut panel = SidePanel::left("tex2d").resizable(true).default_width(self.settings.layout.texture_width).width_range(300.0..=900.0).frame(compat::frame(BG1(), 10.0));
         if self.layout_reset {
             panel = panel.exact_width(self.settings.layout.texture_width);
         }
@@ -43,7 +45,7 @@ impl App {
                 });
                 return;
             };
-            let accent = if self.ed.mode == Mode::Animate { WARN } else { accent() };
+            let accent = if self.ed.mode == Mode::Animate { WARN() } else { accent() };
             if matches!(canvas, Canvas::Base { .. } | Canvas::Patch { .. } | Canvas::Emotion { .. }) {
                 self.texture_selector(ui, accent);
             }
@@ -100,7 +102,7 @@ impl App {
         if self.ed.mode == Mode::Animate {
             ui.horizontal_wrapped(|ui| {
                 for (l, name, tip) in [(PaintLayer::FramePatch, "This frame only", "One-off repaint of this frame (blink, blush)"), (PaintLayer::Emotion, "Emotion", "Paint into the image of the selected emotion"), (PaintLayer::Base, "Whole model", "Edit the base texture in every frame")] {
-                    if Btn::new(name).tip(tip).accent(WARN).on(self.ed.paint_layer == l).size(vec2(24.0 + name.chars().count() as f32 * 7.5, 28.0)).show(ui).clicked() {
+                    if Btn::new(name).tip(tip).accent(WARN()).on(self.ed.paint_layer == l).size(vec2(24.0 + name.chars().count() as f32 * 7.5, 28.0)).show(ui).clicked() {
                         self.ed.paint_layer = l;
                     }
                 }
@@ -131,7 +133,7 @@ impl App {
         }
         let z = self.tex.zoom;
         let img = Rect::from_center_size(rect.center() + self.tex.pan, vec2(tw * z, th * z));
-        painter.rect_filled(rect, compat::cr(3.0), BG0);
+        painter.rect_filled(rect, compat::cr(3.0), BG0());
         // checkerboard under transparent pixels
         let vis = img.intersect(rect);
         let cell = 12.0;
@@ -153,7 +155,7 @@ impl App {
         if let Some(t) = &self.tex.tex {
             painter.image(t.id(), img, Rect::from_min_max(pos2(0.0, 0.0), pos2(1.0, 1.0)), Color32::WHITE);
         }
-        compat::stroke_rect(painter, img.expand(1.0), 0.0, crate::compat::stroke(1.0, LINE));
+        compat::stroke_rect(painter, img.expand(1.0), 0.0, crate::compat::stroke(1.0, LINE()));
         if self.settings.pixel_grid && z >= 8.0 {
             let st = crate::compat::stroke(1.0, Color32::from_rgba_unmultiplied(255, 255, 255, 26));
             for i in 1..size.0 {
@@ -199,6 +201,7 @@ impl App {
                     self.remember_color();
                 }
                 self.ed.canvas_press(canvas, to_tex(p));
+                self.tex.stab = to_tex(p);
                 self.tex.drag = Some(canvas);
             }
         }
@@ -213,8 +216,18 @@ impl App {
                 }
                 v
             });
+            let s = self.settings.stabilizer;
+            let smooth = s > 0.0 && self.ed.brush.tool.is_continuous();
             for p in pts {
-                self.ed.canvas_drag(c, to_tex(p));
+                let t = to_tex(p);
+                if smooth {
+                    // the brush trails behind the mouse (Krita's stabilizer)
+                    let k = 1.0 - s * 0.92;
+                    self.tex.stab = (self.tex.stab.0 + (t.0 - self.tex.stab.0) * k, self.tex.stab.1 + (t.1 - self.tex.stab.1) * k);
+                    self.ed.canvas_drag(c, self.tex.stab);
+                } else {
+                    self.ed.canvas_drag(c, t);
+                }
             }
         }
         if self.tex.drag.is_some() && !down {

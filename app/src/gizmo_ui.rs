@@ -27,9 +27,9 @@ impl Default for GizmoPrefs {
 
 fn axis_color(a: Axis) -> Color32 {
     match a {
-        Axis::X => AXIS_X,
-        Axis::Y => AXIS_Y,
-        Axis::Z => AXIS_Z,
+        Axis::X => AXIS_X(),
+        Axis::Y => AXIS_Y(),
+        Axis::Z => AXIS_Z(),
     }
 }
 
@@ -141,7 +141,7 @@ impl App {
             p.circle_filled(o, 3.5, Color32::WHITE);
         }
         if !self.vp.gizmo_text.is_empty() {
-            compat::text(p, pos2(img.center().x, img.min.y + 14.0), Align2::CENTER_TOP, &self.vp.gizmo_text, 17.0, TEXT);
+            compat::text(p, pos2(img.center().x, img.min.y + 14.0), Align2::CENTER_TOP, &self.vp.gizmo_text, 17.0, TEXT());
         }
     }
 
@@ -157,6 +157,9 @@ impl App {
     /// Handles pointer input for the gizmo. Returns true when the gizmo consumed the event, so
     /// the normal tool of the mode must not start.
     pub fn gizmo_input(&mut self, ctx: &egui::Context, img: Rect, sc: f32, w: u32, h: u32, hover: bool) -> bool {
+        if self.ed.edit_active() {
+            return false;
+        }
         if let Some((b, joint)) = self.bone_gizmo_target() {
             return self.bone_gizmo_input(ctx, img, sc, w, h, hover, b, joint);
         }
@@ -213,6 +216,9 @@ impl App {
 
     /// Draws the handles over the viewport image.
     pub fn gizmo_draw(&self, p: &egui::Painter, img: Rect, sc: f32, w: u32, h: u32) {
+        if self.ed.edit_active() {
+            return;
+        }
         if let Some((_, joint)) = self.bone_gizmo_target() {
             self.bone_gizmo_draw(p, img, sc, w, h, joint);
             return;
@@ -260,7 +266,7 @@ impl App {
                     p.line_segment([o, e], compat::stroke(width(hdl), col));
                     p.rect_filled(Rect::from_center_size(e, vec2(11.0, 11.0)), compat::cr(2.0), col);
                 }
-                let col = lit(Handle::Uniform, TEXT);
+                let col = lit(Handle::Uniform, TEXT());
                 p.rect_filled(Rect::from_center_size(o, vec2(15.0, 15.0)), compat::cr(3.0), alpha(col, 200));
                 compat::stroke_rect(p, Rect::from_center_size(o, vec2(15.0, 15.0)), 3.0, compat::stroke(1.5, col));
             }
@@ -276,13 +282,16 @@ impl App {
         }
         p.circle_filled(o, 3.5, Color32::WHITE);
         if !self.vp.gizmo_text.is_empty() {
-            let r = compat::text(p, pos2(img.center().x, img.min.y + 14.0), Align2::CENTER_TOP, &self.vp.gizmo_text, 17.0, TEXT);
+            let r = compat::text(p, pos2(img.center().x, img.min.y + 14.0), Align2::CENTER_TOP, &self.vp.gizmo_text, 17.0, TEXT());
             let _ = r;
         }
     }
 
     /// Small strip with the gizmo tools, shown at the top left of the viewport.
     pub fn gizmo_bar(&mut self, ctx: &egui::Context, img: Rect) {
+        if self.ed.edit_active() {
+            return;
+        }
         let relevant = match self.ed.mode {
             Mode::Model => self.model_tool == ModelTool::Select,
             Mode::Animate => matches!(self.anim_tool, AnimTool::MoveObject | AnimTool::Pose),

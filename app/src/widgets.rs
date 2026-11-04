@@ -77,11 +77,11 @@ impl<'a> Btn<'a> {
         let down = self.enabled && resp.is_pointer_button_down_on();
         bevel(&painter, rect, self.accent, hov, self.selected, down);
         let ink = if !self.enabled {
-            alpha(DIM, 120)
+            alpha(DIM(), 120)
         } else if self.selected {
-            mix(TEXT, Color32::WHITE, 0.5)
+            mix(TEXT(), BRIGHT(), 0.5)
         } else {
-            mix(mix(DIM, TEXT, 0.75), Color32::WHITE, 0.25 * hov)
+            mix(mix(DIM(), TEXT(), 0.75), BRIGHT(), 0.25 * hov)
         };
         let c = rect.center();
         match (self.icon, self.label.is_empty()) {
@@ -105,17 +105,17 @@ impl<'a> Btn<'a> {
 /// shade along the bottom. Pressed or selected plates are sunk (the bevel is inverted) and tinted.
 pub fn bevel(p: &egui::Painter, rect: egui::Rect, tint: Color32, hov: f32, selected: bool, down: bool) {
     let sunk = selected || down;
-    let mut fill = mix(BG2, BG3, hov);
+    let mut fill = mix(BG2(), BG3(), hov);
     if selected {
-        fill = mix(BG2, tint, 0.32 + 0.08 * hov);
+        fill = mix(BG2(), tint, 0.32 + 0.08 * hov);
     }
     if down {
-        fill = mix(fill, BG0, 0.3);
+        fill = mix(fill, BG0(), 0.3);
     }
-    let edge = if selected { mix(tint, BG0, 0.15) } else { SHADE };
+    let edge = if selected { mix(tint, BG0(), 0.15) } else { SHADE() };
     p.rect_filled(rect, compat::cr(RADIUS - 1.0), fill);
     let inner = rect.shrink(1.0);
-    let (top, bottom) = if sunk { (alpha(SHADE, 150), alpha(Color32::WHITE, 18)) } else { (mix(HILITE, Color32::WHITE, 0.08 * hov), alpha(SHADE, 170)) };
+    let (top, bottom) = if sunk { (alpha(SHADE(), 150), alpha(Color32::WHITE, 18)) } else { (mix(HILITE(), Color32::WHITE, 0.08 * hov), alpha(SHADE(), 170)) };
     p.line_segment([pos2(inner.min.x + 1.0, inner.min.y + 0.5), pos2(inner.max.x - 1.0, inner.min.y + 0.5)], compat::stroke(1.0, top));
     p.line_segment([pos2(inner.min.x + 1.0, inner.max.y - 0.5), pos2(inner.max.x - 1.0, inner.max.y - 0.5)], compat::stroke(1.0, bottom));
     compat::stroke_rect(p, rect, RADIUS - 1.0, compat::stroke(1.0, edge));
@@ -129,7 +129,7 @@ pub fn tool_cell(ui: &mut Ui, icon: Icon, active: bool, tip: &str) -> Response {
     if active || hov > 0.0 || resp.is_pointer_button_down_on() {
         bevel(p, rect, accent(), hov, active, resp.is_pointer_button_down_on());
     }
-    let ink = if active { Color32::WHITE } else { mix(DIM, TEXT, 0.5 + 0.5 * hov) };
+    let ink = if active { BRIGHT() } else { mix(DIM(), TEXT(), 0.5 + 0.5 * hov) };
     icons::draw(p, icon, rect.center(), 16.0, ink);
     if resp.hovered() {
         ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
@@ -148,9 +148,9 @@ pub fn ribbon_button(ui: &mut Ui, icon: Icon, active: bool, tip: &str) -> Respon
         p.rect_filled(plate, compat::cr(RADIUS + 1.0), alpha(accent(), 46));
         p.rect_filled(egui::Rect::from_min_size(pos2(rect.min.x, plate.min.y + 5.0), vec2(2.0, plate.height() - 10.0)), compat::cr(1.0), accent());
     } else if hov > 0.0 {
-        p.rect_filled(plate, compat::cr(RADIUS + 1.0), alpha(BG3, (hov * 255.0) as u8));
+        p.rect_filled(plate, compat::cr(RADIUS + 1.0), alpha(BG3(), (hov * 255.0) as u8));
     }
-    let ink = if active { mix(accent(), Color32::WHITE, 0.35) } else { mix(mix(DIM, TEXT, 0.3), TEXT, hov) };
+    let ink = if active { mix(accent(), BRIGHT(), 0.35) } else { mix(mix(DIM(), TEXT(), 0.3), TEXT(), hov) };
     icons::draw(p, icon, rect.center(), 16.0, ink);
     if resp.hovered() {
         ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
@@ -168,17 +168,17 @@ pub fn tab(ui: &mut Ui, label: &str, icon: Option<Icon>, active: bool, tip: &str
     let p = ui.painter();
     let plate = rect.shrink2(vec2(0.0, 2.0));
     if active {
-        p.rect_filled(plate, compat::cr(RADIUS + 1.0), BG3);
+        p.rect_filled(plate, compat::cr(RADIUS + 1.0), BG3());
         p.rect_filled(egui::Rect::from_min_size(pos2(plate.min.x + 6.0, rect.max.y - 2.0), vec2(plate.width() - 12.0, 2.0)), compat::cr(1.0), accent());
     } else if resp.hovered() {
-        p.rect_filled(plate, compat::cr(RADIUS + 1.0), BG2);
+        p.rect_filled(plate, compat::cr(RADIUS + 1.0), BG2());
     }
-    let ink = if active { TEXT } else if resp.hovered() { mix(DIM, TEXT, 0.6) } else { DIM };
+    let ink = if active { TEXT() } else if resp.hovered() { mix(DIM(), TEXT(), 0.6) } else { DIM() };
     let text_w = if label.is_empty() { 0.0 } else { label.chars().count() as f32 * 7.2 };
     let content = text_w + if icon.is_some() { if label.is_empty() { 16.0 } else { 22.0 } } else { 0.0 };
     let mut x = rect.center().x - content * 0.5;
     if let Some(i) = icon {
-        icons::draw(p, i, pos2(x + 8.0, rect.center().y), 16.0, if active { mix(accent(), Color32::WHITE, 0.3) } else { ink });
+        icons::draw(p, i, pos2(x + 8.0, rect.center().y), 16.0, if active { mix(accent(), BRIGHT(), 0.3) } else { ink });
         x += 22.0;
     }
     if !label.is_empty() {
@@ -205,7 +205,7 @@ pub fn section<R>(ui: &mut Ui, title: &str, _accent: Color32, body: impl FnOnce(
         ui.ctx().data_mut(|d| d.insert_temp(id, open));
     }
     let p = ui.painter();
-    let ink = if resp.hovered() { TEXT } else { DIM };
+    let ink = if resp.hovered() { TEXT() } else { DIM() };
     // chevron: a 5 px pixel triangle, pointing down when open
     let (cx, cy) = (rect.min.x + 4.0, rect.center().y);
     let tri = if open { vec![pos2(cx - 3.0, cy - 1.5), pos2(cx + 3.0, cy - 1.5), pos2(cx, cy + 2.0)] } else { vec![pos2(cx - 1.5, cy - 3.0), pos2(cx + 2.0, cy), pos2(cx - 1.5, cy + 3.0)] };
@@ -215,7 +215,7 @@ pub fn section<R>(ui: &mut Ui, title: &str, _accent: Color32, body: impl FnOnce(
     let w = galley.size().x;
     let gy = rect.center().y - galley.size().y * 0.5;
     p.galley(pos2(rect.min.x + 12.0, gy), galley, ink);
-    p.line_segment([pos2(rect.min.x + w + 20.0, rect.center().y), pos2(rect.max.x, rect.center().y)], compat::stroke(1.0, LINE_SOFT));
+    p.line_segment([pos2(rect.min.x + w + 20.0, rect.center().y), pos2(rect.max.x, rect.center().y)], compat::stroke(1.0, LINE_SOFT()));
     if resp.hovered() {
         ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
     }
@@ -231,12 +231,12 @@ pub fn nav_item(ui: &mut Ui, icon: Icon, label: &str, active: bool, tip: &str) -
     let (rect, resp) = ui.allocate_exact_size(vec2(ui.available_width(), 28.0), Sense::click());
     let p = ui.painter();
     if active {
-        p.rect_filled(rect, compat::cr(RADIUS + 1.0), BG3);
+        p.rect_filled(rect, compat::cr(RADIUS + 1.0), BG3());
     } else if resp.hovered() {
-        p.rect_filled(rect, compat::cr(RADIUS + 1.0), BG2);
+        p.rect_filled(rect, compat::cr(RADIUS + 1.0), BG2());
     }
-    let ink = if active { TEXT } else { mix(DIM, TEXT, if resp.hovered() { 0.7 } else { 0.25 }) };
-    icons::draw(p, icon, pos2(rect.min.x + 14.0, rect.center().y), 16.0, if active { mix(accent(), Color32::WHITE, 0.3) } else { ink });
+    let ink = if active { TEXT() } else { mix(DIM(), TEXT(), if resp.hovered() { 0.7 } else { 0.25 }) };
+    icons::draw(p, icon, pos2(rect.min.x + 14.0, rect.center().y), 16.0, if active { mix(accent(), BRIGHT(), 0.3) } else { ink });
     compat::text(p, pos2(rect.min.x + 30.0, rect.center().y), Align2::LEFT_CENTER, label, 13.0, ink);
     if resp.hovered() {
         ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
@@ -262,17 +262,17 @@ pub fn tree_row(ui: &mut Ui, icon: Icon, name: &str, selected: bool, eye: Option
     if selected {
         p.rect_filled(rect, compat::cr(RADIUS + 1.0), alpha(accent(), 56));
     } else if row.hovered() {
-        p.rect_filled(rect, compat::cr(RADIUS + 1.0), BG2);
+        p.rect_filled(rect, compat::cr(RADIUS + 1.0), BG2());
     }
-    let ink = if !visible { alpha(DIM, 150) } else if selected { Color32::WHITE } else { TEXT };
-    icons::draw(p, icon, pos2(rect.min.x + 14.0, rect.center().y), 16.0, if selected { mix(accent(), Color32::WHITE, 0.45) } else { alpha(DIM, if visible { 255 } else { 120 }) });
+    let ink = if !visible { alpha(DIM(), 150) } else if selected { BRIGHT() } else { TEXT() };
+    icons::draw(p, icon, pos2(rect.min.x + 14.0, rect.center().y), 16.0, if selected { mix(accent(), BRIGHT(), 0.45) } else { alpha(DIM(), if visible { 255 } else { 120 }) });
     let clip = p.with_clip_rect(egui::Rect::from_min_max(rect.min, pos2(eye_rect.min.x - 2.0, rect.max.y)));
     compat::text(&clip, pos2(rect.min.x + 28.0, rect.center().y), Align2::LEFT_CENTER, name, 13.0, ink);
     if eye.is_some() && (row.hovered() || !visible) {
         if over_eye {
-            p.rect_filled(eye_rect, compat::cr(RADIUS), BG3);
+            p.rect_filled(eye_rect, compat::cr(RADIUS), BG3());
         }
-        icons::draw(p, if visible { Icon::Eye } else { Icon::EyeOff }, eye_rect.center(), 16.0, if over_eye { TEXT } else { DIM });
+        icons::draw(p, if visible { Icon::Eye } else { Icon::EyeOff }, eye_rect.center(), 16.0, if over_eye { TEXT() } else { DIM() });
     }
     let eye = row.clicked() && over_eye;
     if row.hovered() {
@@ -283,7 +283,7 @@ pub fn tree_row(ui: &mut Ui, icon: Icon, name: &str, selected: bool, eye: Option
 
 /// Small dimmed hint or caption text.
 pub fn dim(ui: &mut Ui, text: &str) {
-    ui.label(egui::RichText::new(text).size(12.5).color(DIM));
+    ui.label(egui::RichText::new(text).size(12.5).color(DIM()));
 }
 
 /// Toggle switch with a smoothly animated knob (no tooltip; see [`toggle_tip`]).
@@ -302,11 +302,11 @@ pub fn toggle_tip(ui: &mut Ui, value: &mut bool, label: &str, accent: Color32, t
     let t = ui.ctx().animate_bool_with_time(resp.id, *value, if reduce_motion() { 0.0 } else { 0.08 });
     let track = egui::Rect::from_min_size(rect.min + vec2(0.0, 3.0), vec2(tw, th));
     let p = ui.painter();
-    p.rect_filled(track, compat::cr(th * 0.5), mix(BG0, accent, 0.85 * t));
-    compat::stroke_rect(p, track, th * 0.5, compat::stroke(1.0, mix(LINE, accent, t)));
+    p.rect_filled(track, compat::cr(th * 0.5), mix(BG0(), accent, 0.85 * t));
+    compat::stroke_rect(p, track, th * 0.5, compat::stroke(1.0, mix(LINE(), accent, t)));
     let knob = egui::Rect::from_min_size(pos2(track.min.x + 2.0 + t * (tw - th), track.min.y + 2.0), vec2(th - 4.0, th - 4.0));
-    p.rect_filled(knob, compat::cr(th * 0.5), mix(DIM, Color32::WHITE, t));
-    compat::text(p, rect.min + vec2(tw + 8.0, 11.0), Align2::LEFT_CENTER, label, 13.0, TEXT);
+    p.rect_filled(knob, compat::cr(th * 0.5), mix(DIM(), Color32::WHITE, t));
+    compat::text(p, rect.min + vec2(tw + 8.0, 11.0), Align2::LEFT_CENTER, label, 13.0, TEXT());
     with_tip(resp, tip)
 }
 
@@ -347,8 +347,8 @@ pub fn drag3(ui: &mut Ui, label: &str, v: &mut [f32; 3], speed: f32) -> bool {
 pub fn drag3_tip(ui: &mut Ui, label: &str, v: &mut [f32; 3], speed: f32, tip: &str) -> bool {
     let mut changed = false;
     ui.horizontal(|ui| {
-        ui.label(egui::RichText::new(label).size(12.5).color(DIM));
-        for (i, c) in [AXIS_X, AXIS_Y, AXIS_Z].into_iter().enumerate() {
+        ui.label(egui::RichText::new(label).size(12.5).color(DIM()));
+        for (i, c) in [AXIS_X(), AXIS_Y(), AXIS_Z()].into_iter().enumerate() {
             let name = ["X", "Y", "Z"][i];
             ui.label(egui::RichText::new(name).size(12.5).color(c));
             let axis_tip = if tip.is_empty() { String::new() } else { format!("{tip} ({name})") };
@@ -363,11 +363,11 @@ pub fn swatch(ui: &mut Ui, color: Color32, selected: bool, size: f32) -> Respons
     let (rect, resp) = ui.allocate_exact_size(vec2(size, size), Sense::click());
     let p = ui.painter();
     p.rect_filled(rect, compat::cr(0.0), color);
-    let edge = if selected { Color32::WHITE } else if resp.hovered() { TEXT } else { SHADE };
+    let edge = if selected { BRIGHT() } else if resp.hovered() { TEXT() } else { SHADE() };
     compat::stroke_rect(p, rect, 0.0, compat::stroke(1.0, edge));
     if selected {
-        compat::stroke_rect(p, rect.expand(1.0), 0.0, compat::stroke(1.0, SHADE));
-        compat::stroke_rect(p, rect.shrink(1.0), 0.0, compat::stroke(1.0, SHADE));
+        compat::stroke_rect(p, rect.expand(1.0), 0.0, compat::stroke(1.0, SHADE()));
+        compat::stroke_rect(p, rect.shrink(1.0), 0.0, compat::stroke(1.0, SHADE()));
     }
     resp
 }
@@ -382,11 +382,11 @@ pub fn icon_inline(ui: &mut Ui, icon: Icon, color: Color32) {
 pub fn logo(ui: &mut Ui, size: f32) {
     let font = egui::FontId::new(size * 0.8, egui::FontFamily::Name("strong".into()));
     let p = ui.painter().clone();
-    let name = p.layout_no_wrap("Jank".to_string(), font.clone(), TEXT);
+    let name = p.layout_no_wrap("Jank".to_string(), font.clone(), TEXT());
     let bang = p.layout_no_wrap("!".to_string(), font, accent());
     let (w1, w2, h) = (name.size().x, bang.size().x, name.size().y);
     let (rect, _) = ui.allocate_exact_size(vec2(w1 + w2 + 2.0, h.max(size)), Sense::hover());
     let y = rect.center().y - h * 0.5;
-    p.galley(pos2(rect.min.x, y), name, TEXT);
+    p.galley(pos2(rect.min.x, y), name, TEXT());
     p.galley(pos2(rect.min.x + w1 + 1.0, y), bang, accent());
 }

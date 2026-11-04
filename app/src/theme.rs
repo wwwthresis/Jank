@@ -17,26 +17,79 @@ use psxcore::settings::{Density, TextSize};
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::Arc;
 
-pub const BG0: Color32 = Color32::from_rgb(0x13, 0x13, 0x16);
-pub const BG1: Color32 = Color32::from_rgb(0x1b, 0x1b, 0x1f);
-pub const BG2: Color32 = Color32::from_rgb(0x26, 0x26, 0x2b);
-pub const BG3: Color32 = Color32::from_rgb(0x31, 0x31, 0x37);
-pub const LINE: Color32 = Color32::from_rgb(0x3a, 0x3a, 0x41);
-pub const LINE_SOFT: Color32 = Color32::from_rgb(0x27, 0x27, 0x2c);
-pub const TEXT: Color32 = Color32::from_rgb(0xdc, 0xdc, 0xe0);
-pub const DIM: Color32 = Color32::from_rgb(0x8b, 0x8b, 0x94);
-/// Top/left bevel highlight of a raised control (Aseprite-style pixel bevel).
-pub const HILITE: Color32 = Color32::from_rgb(0x3d, 0x3d, 0x45);
-/// Bottom/right bevel shade of a raised control.
-pub const SHADE: Color32 = Color32::from_rgb(0x0d, 0x0d, 0x10);
-pub const WARN: Color32 = Color32::from_rgb(0xd6, 0xa7, 0x4a);
-pub const DANGER: Color32 = Color32::from_rgb(0xd6, 0x5f, 0x6b);
+/// The colours of the active theme (see `psxcore::themes`), packed RGB in the order of
+/// `psxcore::themes::KEYS`. Read at paint time, so switching themes applies immediately.
+static PALETTE: [AtomicU32; 16] = [
+    AtomicU32::new(0x131316),
+    AtomicU32::new(0x1b1b1f),
+    AtomicU32::new(0x26262b),
+    AtomicU32::new(0x313137),
+    AtomicU32::new(0x3a3a41),
+    AtomicU32::new(0x27272c),
+    AtomicU32::new(0xdcdce0),
+    AtomicU32::new(0x8b8b94),
+    AtomicU32::new(0x3d3d45),
+    AtomicU32::new(0x0d0d10),
+    AtomicU32::new(0xd6a74a),
+    AtomicU32::new(0xd65f6b),
+    AtomicU32::new(0x131316),
+    AtomicU32::new(0xd06464),
+    AtomicU32::new(0x84b06a),
+    AtomicU32::new(0x6493d2),
+];
+static LIGHT: AtomicU32 = AtomicU32::new(0);
+
+fn slot(i: usize) -> Color32 {
+    let v = PALETTE[i].load(Ordering::Relaxed);
+    Color32::from_rgb((v >> 16) as u8, (v >> 8) as u8, v as u8)
+}
+macro_rules! colour {
+    ($($(#[$m:meta])* $name:ident = $i:expr;)*) => {
+        $( $(#[$m])* #[allow(non_snake_case)] #[inline] pub fn $name() -> Color32 { slot($i) } )*
+    };
+}
+colour! {
+    /// Deepest surface: ribbon, menu bar, viewport surround.
+    BG0 = 0;
+    /// Panels.
+    BG1 = 1;
+    /// Controls.
+    BG2 = 2;
+    /// Hovered controls.
+    BG3 = 3;
+    LINE = 4;
+    LINE_SOFT = 5;
+    TEXT = 6;
+    DIM = 7;
+    /// Top/left bevel highlight of a raised control (Aseprite-style pixel bevel).
+    HILITE = 8;
+    /// Bottom/right bevel shade of a raised control.
+    SHADE = 9;
+    WARN = 10;
+    DANGER = 11;
+    /// Background around the 3D picture.
+    VIEWPORT = 12;
+    AXIS_X = 13;
+    AXIS_Y = 14;
+    AXIS_Z = 15;
+}
+/// True for light themes (dark text on bright surfaces).
+pub fn is_light() -> bool {
+    LIGHT.load(Ordering::Relaxed) != 0
+}
+/// The strongest ink for text and icons on selected or accent-tinted surfaces:
+/// white on dark themes, near-black on light ones.
+#[allow(non_snake_case)]
+pub fn BRIGHT() -> Color32 {
+    if is_light() {
+        Color32::from_rgb(0x12, 0x14, 0x1a)
+    } else {
+        Color32::WHITE
+    }
+}
 /// Onion-skin ghosts: previous frames are warm, next frames are green (functional colours like the axis colours).
 pub const ONION_PREV: Color32 = Color32::from_rgb(0xd9, 0x7a, 0x5c);
 pub const ONION_NEXT: Color32 = Color32::from_rgb(0x5f, 0xb4, 0x82);
-pub const AXIS_X: Color32 = Color32::from_rgb(0xd0, 0x64, 0x64);
-pub const AXIS_Y: Color32 = Color32::from_rgb(0x84, 0xb0, 0x6a);
-pub const AXIS_Z: Color32 = Color32::from_rgb(0x64, 0x93, 0xd2);
 
 /// Corner radius for controls and windows, in points.
 pub const RADIUS: f32 = 3.0;
@@ -76,10 +129,14 @@ pub struct Look {
     pub accent: [u8; 3],
     pub density: Density,
     pub text: TextSize,
+    /// Theme colours in the order of `psxcore::themes::KEYS`.
+    pub colors: [[u8; 3]; 16],
+    pub light: bool,
 }
 impl Default for Look {
     fn default() -> Self {
-        Self { accent: [0x8a, 0x7b, 0xf2], density: Density::Compact, text: TextSize::Normal }
+        let t = &psxcore::themes::builtin()[0];
+        Self { accent: [0x8a, 0x7b, 0xf2], density: Density::Compact, text: TextSize::Normal, colors: t.colors, light: false }
     }
 }
 
@@ -91,24 +148,28 @@ pub fn apply(ctx: &Context) {
 
 /// Applies colours, spacing and text sizes. Cheap enough to call whenever a setting changes.
 pub fn apply_look(ctx: &Context, look: Look) {
+    for (i, c) in look.colors.iter().enumerate() {
+        PALETTE[i].store(((c[0] as u32) << 16) | ((c[1] as u32) << 8) | c[2] as u32, Ordering::Relaxed);
+    }
+    LIGHT.store(look.light as u32, Ordering::Relaxed);
     let [r, g, b] = look.accent;
     ACCENT_RGB.store(((r as u32) << 16) | ((g as u32) << 8) | b as u32, Ordering::Relaxed);
     let acc = accent();
     let roomy = look.density == Density::Comfortable;
     let body = look.text.points();
-    let mut v = egui::Visuals::dark();
-    v.override_text_color = Some(TEXT);
-    v.panel_fill = BG1;
-    v.window_fill = BG1;
-    v.extreme_bg_color = BG0;
-    v.faint_bg_color = BG2;
-    v.code_bg_color = BG0;
+    let mut v = if look.light { egui::Visuals::light() } else { egui::Visuals::dark() };
+    v.override_text_color = Some(TEXT());
+    v.panel_fill = BG1();
+    v.window_fill = BG1();
+    v.extreme_bg_color = BG0();
+    v.faint_bg_color = BG2();
+    v.code_bg_color = BG0();
     v.hyperlink_color = acc;
-    v.window_stroke = crate::compat::stroke(1.0, LINE);
+    v.window_stroke = crate::compat::stroke(1.0, LINE());
     v.window_corner_radius = cr(RADIUS + 3.0);
     v.menu_corner_radius = cr(RADIUS + 1.0);
-    v.window_shadow = egui::Shadow { offset: [0, 6], blur: 18, spread: 0, color: Color32::from_black_alpha(110) };
-    v.popup_shadow = egui::Shadow { offset: [0, 3], blur: 10, spread: 0, color: Color32::from_black_alpha(100) };
+    v.window_shadow = egui::Shadow { offset: [0, 6], blur: 18, spread: 0, color: Color32::from_black_alpha(if look.light { 40 } else { 110 }) };
+    v.popup_shadow = egui::Shadow { offset: [0, 3], blur: 10, spread: 0, color: Color32::from_black_alpha(if look.light { 35 } else { 100 }) };
     v.selection.bg_fill = alpha(acc, 80);
     v.selection.stroke = crate::compat::stroke(1.0, acc);
     v.slider_trailing_fill = true;
@@ -116,17 +177,17 @@ pub fn apply_look(ctx: &Context, look: Look) {
     v.striped = false;
     v.text_cursor.stroke = crate::compat::stroke(2.0, acc);
     for (w, fill, stroke) in [
-        (&mut v.widgets.noninteractive, BG1, LINE_SOFT),
-        (&mut v.widgets.inactive, BG2, LINE),
-        (&mut v.widgets.hovered, BG3, mix(LINE, acc, 0.45)),
-        (&mut v.widgets.active, BG3, acc),
-        (&mut v.widgets.open, BG3, LINE),
+        (&mut v.widgets.noninteractive, BG1(), LINE_SOFT()),
+        (&mut v.widgets.inactive, BG2(), LINE()),
+        (&mut v.widgets.hovered, BG3(), mix(LINE(), acc, 0.45)),
+        (&mut v.widgets.active, BG3(), acc),
+        (&mut v.widgets.open, BG3(), LINE()),
     ] {
         w.bg_fill = fill;
         w.weak_bg_fill = fill;
         w.corner_radius = cr(RADIUS);
         w.bg_stroke = crate::compat::stroke(1.0, stroke);
-        w.fg_stroke = crate::compat::stroke(1.0, TEXT);
+        w.fg_stroke = crate::compat::stroke(1.0, TEXT());
         w.expansion = 0.0;
     }
     ctx.set_visuals(v);

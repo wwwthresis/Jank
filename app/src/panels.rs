@@ -165,6 +165,11 @@ fn paint_tools(app: &mut App, ui: &mut Ui, accent: Color32, layers: bool) {
                 (Tool::Line, Icon::Line, "Line"),
                 (Tool::Rect, Icon::Rect, "Rectangle outline"),
                 (Tool::RectFilled, Icon::RectFilled, "Filled rectangle"),
+                (Tool::Gradient, Icon::Gradient, "Gradient: drag from the main colour to the second colour"),
+                (Tool::Smudge, Icon::Smudge, "Smudge: push colours along the stroke"),
+                (Tool::Blur, Icon::Blur, "Blur: soften details"),
+                (Tool::Dodge, Icon::Sun, "Dodge: lighten"),
+                (Tool::Burn, Icon::Sparkle, "Burn: darken"),
             ] {
                 if Btn::new("").icon(icon).accent(accent).on(app.paint.sel_tool.is_none() && app.ed.brush.tool == t).tip(tip).show(ui).clicked() {
                     app.ed.brush.tool = t;
@@ -184,8 +189,34 @@ fn paint_tools(app: &mut App, ui: &mut Ui, accent: Color32, layers: bool) {
             slider_f(ui, "tolerance", &mut tol, 0.0..=128.0);
             b.tolerance = tol as u32;
         }
+        if matches!(b.tool, Tool::Smudge | Tool::Blur | Tool::Dodge | Tool::Burn) {
+            slider_f(ui, "strength", &mut b.strength, 0.05..=1.0);
+        }
+        if matches!(b.tool, Tool::Dodge | Tool::Burn) {
+            ui.horizontal(|ui| {
+                for (t, l) in [(Tool::Dodge, "Dodge (lighten)"), (Tool::Burn, "Burn (darken)")] {
+                    if Btn::new(l).accent(accent).on(b.tool == t).show(ui).clicked() {
+                        b.tool = t;
+                    }
+                }
+            });
+        }
+        let sym_tip = app.tip_for(psxcore::commands::CommandId::ToggleSymmetry, "Every dab is mirrored left/right across the middle of the canvas");
+        crate::widgets::toggle_tip(ui, &mut b.symmetry, "Symmetric painting", accent, &sym_tip);
         b.size = b.size.round().max(1.0);
         app.ed.brush = b;
+        let mut st = app.settings.stabilizer;
+        if crate::widgets::slider_f_tip(ui, "stabilizer", &mut st, 0.0..=1.0, "Smooths shaky strokes: the brush trails behind the mouse (0 = off)") {
+            app.settings.stabilizer = st;
+            app.touch_settings();
+        }
+        if app.ed.mode != psxcore::editor::Mode::Animate || app.anim_tool == crate::AnimTool::PaintModel {
+            let mut pp = app.ed.project_paint;
+            let tip = app.tip_for(psxcore::commands::CommandId::ToggleProjectionPaint, "The brush paints through the view onto whatever is under it, across UV seams and objects (brush and eraser)");
+            if crate::widgets::toggle_tip(ui, &mut pp, "Projection painting in 3D", accent, &tip).changed() {
+                app.ed.project_paint = pp;
+            }
+        }
     });
     if layers {
         app.layers_section(ui, accent);
@@ -232,25 +263,27 @@ fn pane_header(ui: &mut Ui, icon: Icon, title: &str, hint: &str) {
     let p = ui.painter();
     crate::icons::draw(p, icon, egui::pos2(rect.min.x + 9.0, rect.center().y), 16.0, accent());
     let font = egui::FontId::new(13.5, egui::FontFamily::Name("strong".into()));
-    let g = p.layout_no_wrap(title.to_string(), font, TEXT);
+    let g = p.layout_no_wrap(title.to_string(), font, TEXT());
     let tw = g.size().x;
-    p.galley(egui::pos2(rect.min.x + 24.0, rect.center().y - g.size().y * 0.5), g, TEXT);
-    compat::text(p, egui::pos2(rect.min.x + 32.0 + tw, rect.center().y + 0.5), egui::Align2::LEFT_CENTER, hint, 11.5, DIM);
-    p.line_segment([egui::pos2(rect.min.x - 10.0, rect.max.y), egui::pos2(rect.max.x + 10.0, rect.max.y)], compat::stroke(1.0, LINE_SOFT));
+    p.galley(egui::pos2(rect.min.x + 24.0, rect.center().y - g.size().y * 0.5), g, TEXT());
+    compat::text(p, egui::pos2(rect.min.x + 32.0 + tw, rect.center().y + 0.5), egui::Align2::LEFT_CENTER, hint, 11.5, DIM());
+    p.line_segment([egui::pos2(rect.min.x - 10.0, rect.max.y), egui::pos2(rect.max.x + 10.0, rect.max.y)], compat::stroke(1.0, LINE_SOFT()));
 }
 
 impl App {
     pub fn left_panel(&mut self, ctx: &Context) {
-        let mut panel = SidePanel::left("left").resizable(true).default_width(self.settings.layout.left_width).width_range(210.0..=380.0).frame(compat::frame(BG1, 10.0));
+        let mut panel = SidePanel::left("left").resizable(true).default_width(self.settings.layout.left_width).width_range(210.0..=380.0).frame(compat::frame(BG1(), 10.0));
         if self.layout_reset {
             panel = panel.exact_width(self.settings.layout.left_width);
         }
         let shown = panel.show(ctx, |ui| {
             pane_header(ui, crate::mode_icon(self.ed.mode), crate::mode_label(self.ed.mode), mode_hint(self.ed.mode));
             ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| match self.ed.mode {
+                Mode::Model if self.ed.edit_active() => self.edit_tools(ui, ctx),
                 Mode::Model => self.model_tools(ui),
                 Mode::Texture => {
                     self.canvas_target_section(ui, accent());
+                    self.indexed_section(ui);
                     paint_tools(self, ui, accent(), true)
                 }
                 Mode::Pose => self.pose_tools(ui),
@@ -262,6 +295,12 @@ impl App {
     }
 
     fn model_tools(&mut self, ui: &mut Ui) {
+        let has = self.ed.selected_object.is_some();
+        let tip = self.tip_for(psxcore::commands::CommandId::EditModeToggle, "Edit the vertices, edges and polygons of the selected object");
+        if Btn::new("Edit mesh").icon(Icon::Vertex).accent(accent()).enabled(has).size(vec2(ui.available_width(), 34.0)).tip(&tip).show(ui).clicked() {
+            self.pending = Some(psxcore::commands::CommandId::EditModeToggle);
+        }
+        ui.add_space(4.0);
         section(ui, "Add", accent(), |ui| {
             ui.horizontal_wrapped(|ui| {
                 for (p, icon, tip) in [(Primitive::Cube, Icon::Cube, "Cube"), (Primitive::Plane, Icon::Plane, "Plane"), (Primitive::Cylinder, Icon::Cylinder, "Cylinder"), (Primitive::Cone, Icon::Cone, "Cone"), (Primitive::Sphere, Icon::Sphere, "Sphere"), (Primitive::Torus, Icon::Torus, "Torus"), (Primitive::Butterfly, Icon::Butterfly, "Butterfly: a ready-made model with a transparent texture")] {
@@ -312,7 +351,7 @@ impl App {
                     }
                 }
             });
-            if Btn::new("Delete faces (Del)").icon(Icon::Trash).accent(DANGER).enabled(nf > 0).size(vec2(ui.available_width(), 32.0)).show(ui).clicked() {
+            if Btn::new("Delete faces (Del)").icon(Icon::Trash).accent(DANGER()).enabled(nf > 0).size(vec2(ui.available_width(), 32.0)).show(ui).clicked() {
                 self.ed.delete_selected_faces();
             }
         });
@@ -335,6 +374,7 @@ impl App {
                 }
             });
         });
+        self.boolean_section(ui);
         section(ui, "Reduce polygons", accent(), |ui| {
             let now = self.ed.selected_model().map_or(0, |m| m.triangle_count());
             dim(ui, &format!("Now: {now} triangles"));
@@ -346,6 +386,7 @@ impl App {
                 }
             }
         });
+        self.refs_section(ui);
     }
 
     fn pose_tools(&mut self, ui: &mut Ui) {
@@ -377,7 +418,7 @@ impl App {
                     let (gap, _) = ui.allocate_exact_size(vec2(depth as f32 * 14.0, 24.0), egui::Sense::hover());
                     for d in 0..depth {
                         let x = gap.min.x + 13.0 + d as f32 * 14.0;
-                        ui.painter().line_segment([egui::pos2(x, gap.min.y - 2.0), egui::pos2(x, gap.max.y + 2.0)], compat::stroke(1.0, LINE));
+                        ui.painter().line_segment([egui::pos2(x, gap.min.y - 2.0), egui::pos2(x, gap.max.y + 2.0)], compat::stroke(1.0, LINE()));
                     }
                     if crate::widgets::tree_row(ui, Icon::Bone, &b.name, self.ed.selected_bone == Some(i), None, "Select this bone").row.clicked() {
                         self.ed.selected_bone = Some(i);
@@ -385,9 +426,10 @@ impl App {
                 });
             }
         });
+        self.ik_section(ui);
         if let Some(b) = self.ed.selected_bone {
             section(ui, "Rotate bone", accent(), |ui| {
-                for (axis, name, c) in [(Vec3::new(1.0, 0.0, 0.0), "X", AXIS_X), (Vec3::new(0.0, 1.0, 0.0), "Y", AXIS_Y), (Vec3::new(0.0, 0.0, 1.0), "Z", AXIS_Z)] {
+                for (axis, name, c) in [(Vec3::new(1.0, 0.0, 0.0), "X", AXIS_X()), (Vec3::new(0.0, 1.0, 0.0), "Y", AXIS_Y()), (Vec3::new(0.0, 0.0, 1.0), "Z", AXIS_Z())] {
                     ui.horizontal(|ui| {
                         ui.label(egui::RichText::new(format!("{name} axis")).color(c));
                         for d in [-15.0f32, -5.0, 5.0, 15.0] {
@@ -442,7 +484,7 @@ impl App {
                     if toggle(ui, &mut only, "Drawing only (hide 3D)", accent()).clicked() {
                         self.ed.set_hand_only(only);
                     }
-                    if Btn::new("Clear drawing").icon(Icon::Trash).accent(DANGER).size(vec2(ui.available_width(), 30.0)).show(ui).clicked() {
+                    if Btn::new("Clear drawing").icon(Icon::Trash).accent(DANGER()).size(vec2(ui.available_width(), 30.0)).show(ui).clicked() {
                         self.ed.clear_hand_layer();
                     }
                 });
@@ -488,7 +530,7 @@ impl App {
                         self.ed.set_frame_emotion(obj, Some(i));
                         self.ed.active_emotion = Some(i);
                     }
-                    if Btn::new("").icon(Icon::Trash).accent(DANGER).size(vec2(30.0, 28.0)).tip("Delete emotion").show(ui).clicked() {
+                    if Btn::new("").icon(Icon::Trash).accent(DANGER()).size(vec2(30.0, 28.0)).tip("Delete emotion").show(ui).clicked() {
                         self.ed.delete_emotion(i);
                     }
                 });
@@ -551,7 +593,7 @@ impl App {
     }
 
     pub fn right_panel(&mut self, ctx: &Context) {
-        let mut panel = SidePanel::right("right").resizable(true).default_width(self.settings.layout.right_width).width_range(240.0..=440.0).frame(compat::frame(BG1, 10.0));
+        let mut panel = SidePanel::right("right").resizable(true).default_width(self.settings.layout.right_width).width_range(240.0..=440.0).frame(compat::frame(BG1(), 10.0));
         if self.layout_reset {
             panel = panel.exact_width(self.settings.layout.right_width);
         }
@@ -649,7 +691,7 @@ impl App {
                     if Btn::new("Duplicate").icon(Icon::Copy).show(ui).clicked() {
                         self.ed.duplicate_object(id);
                     }
-                    if Btn::new("Delete").icon(Icon::Trash).accent(DANGER).show(ui).clicked() {
+                    if Btn::new("Delete").icon(Icon::Trash).accent(DANGER()).show(ui).clicked() {
                         self.ed.delete_object(id);
                     }
                 });

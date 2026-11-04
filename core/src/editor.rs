@@ -108,6 +108,10 @@ enum Slot {
     Anim(usize),
     Frame(usize, usize),
     Whole,
+    /// The triangle meshes of a model together with its Edit-mode polygons.
+    Mesh(usize),
+    /// The indexed-colour data (palettes) of an asset's textures.
+    Indexed(usize),
 }
 enum Data {
     SceneLayers(Vec<Layer>, usize),
@@ -119,6 +123,8 @@ enum Data {
     Anim(Box<Animation>),
     Frame(Box<AnimFrame>),
     Whole(Box<Project>),
+    Mesh(Box<(Vec<Mesh>, Option<Box<(u64, crate::editmesh::EditMesh)>>)>),
+    Indexed(Vec<(usize, crate::palette::Indexed)>),
 }
 struct Entry {
     group: u64,
@@ -138,7 +144,9 @@ impl Data {
             Data::SceneLayers(l, _) => l.iter().map(|l| tex(&l.img)).sum(),
             Data::Emotions(v) => v.iter().map(|e| tex(&e.image)).sum(),
             Data::Model(m) => m.textures.iter().map(tex).sum::<usize>() + 4096,
+            Data::Mesh(m) => m.0.iter().map(|x| x.verts.len() * 72 + x.tris.len() * 12).sum::<usize>() + m.1.as_ref().map_or(0, |t| t.1.verts.len() * 48 + t.1.faces.len() * 120) + 1024,
             Data::Frame(f) => f.hand_layer.as_ref().map_or(0, tex) + f.states.iter().map(|s| s.tex_patch.iter().map(|(_, t)| tex(t)).sum::<usize>()).sum::<usize>() + 1024,
+            Data::Indexed(v) => v.iter().map(|(_, x)| x.idx.len()).sum::<usize>() + 1024,
             _ => 4096,
         }
     }
@@ -243,7 +251,23 @@ pub struct Editor {
     stroke_last: Option<(Canvas, (f32, f32))>,
     shape: Option<(Canvas, (f32, f32), Texture)>,
     sculpt_target: Option<(usize, usize, usize)>,
+    /// Edit mode (polygon editing of one object), see `editmode`.
+    pub edit: Option<EditSession>,
+    /// Inverse kinematics while dragging bones: how many bones above the dragged one follow (0 = off).
+    pub ik_chain: usize,
+    /// The selected reference picture.
+    pub selected_ref: Option<usize>,
+    /// Paint on the model through the screen (a round brush on the visible surface) instead of through the UV map.
+    pub project_paint: bool,
+    proj: Option<ProjStroke>,
 }
+
+#[path = "editor/editmode.rs"]
+mod editmode;
+pub use editmode::*;
+#[path = "editor/extras.rs"]
+mod extras;
+pub use extras::*;
 
 impl Default for Editor {
     fn default() -> Self {
@@ -299,6 +323,11 @@ impl Editor {
             stroke_last: None,
             shape: None,
             sculpt_target: None,
+            edit: None,
+            ik_chain: 0,
+            selected_ref: None,
+            project_paint: false,
+            proj: None,
         }
     }
 
@@ -325,6 +354,11 @@ impl Editor {
             Slot::Anim(i) => Data::Anim(Box::new(p.animations.get(i)?.clone())),
             Slot::Frame(a, f) => Data::Frame(Box::new(p.animations.get(a)?.frames.get(f)?.clone())),
             Slot::Whole => Data::Whole(Box::new(p.clone())),
+            Slot::Mesh(a) => {
+                let asset = p.assets.get(a)?;
+                Data::Mesh(Box::new((asset.model.meshes.clone(), asset.topology.clone())))
+            }
+            Slot::Indexed(a) => Data::Indexed(p.assets.get(a)?.indexed.clone()),
         })
     }
     fn write_slot(&mut self, s: Slot, d: Data) {
@@ -389,6 +423,18 @@ impl Editor {
                 }
             }
             (Slot::Whole, Data::Whole(x)) => *p = *x,
+            (Slot::Mesh(a), Data::Mesh(x)) => {
+                if let Some(d) = p.assets.get_mut(a) {
+                    let (meshes, topo) = *x;
+                    d.model.meshes = meshes;
+                    d.topology = topo;
+                }
+            }
+            (Slot::Indexed(a), Data::Indexed(x)) => {
+                if let Some(d) = p.assets.get_mut(a) {
+                    d.indexed = x;
+                }
+            }
             _ => {}
         }
         self.clamp_cursor();
@@ -434,6 +480,10 @@ impl Editor {
         }
     }
     pub fn end_group(&mut self) {
+        if self.open_group.is_some() && !self.touched.is_empty() {
+            self.sync_indexed_touched();
+        }
+        self.proj = None;
         self.open_group = None;
         self.touched.clear();
         self.stroke_last = None;
@@ -475,6 +525,7 @@ impl Editor {
         let dst = if undo { &mut self.redo } else { &mut self.undo };
         dst.extend(inverse);
         self.dirty = true;
+        self.edit_resync();
         true
     }
 
@@ -485,6 +536,9 @@ impl Editor {
         self.project.name = name.to_string();
     }
     pub fn save_as(&mut self, path: &Path) -> Result<(), String> {
+        if self.edit.as_ref().is_some_and(|s| s.drag.is_some()) {
+            self.edit_drag_end(true);
+        }
         self.project.save(path).map_err(|e| format!("Could not save: {e}"))?;
         self.path = Some(path.to_path_buf());
         self.dirty = false;
@@ -514,6 +568,9 @@ impl Editor {
     // -------------------------------------------------------------- mode and selection
 
     pub fn set_mode(&mut self, mode: Mode) {
+        if mode != Mode::Model && self.edit.is_some() {
+            self.edit_exit();
+        }
         self.end_group();
         self.mode = mode;
         self.playing = false;
@@ -623,7 +680,7 @@ impl Editor {
     }
     pub fn viewport_style(&self) -> PsxStyle {
         let base = self.frame().filter(|_| self.animating()).and_then(|f| f.style.clone()).unwrap_or_else(|| self.project.scene.style.clone());
-        if !self.psx_preview && matches!(self.mode, Mode::Model | Mode::Texture | Mode::Pose) {
+        if (!self.psx_preview || self.edit.is_some()) && matches!(self.mode, Mode::Model | Mode::Texture | Mode::Pose) {
             let mut s = PsxStyle::clean_lowpoly();
             s.width = base.width;
             s.height = base.height;
@@ -634,7 +691,9 @@ impl Editor {
     /// Renders the viewport into `r` at the render resolution of the style. Afterwards `r.frame.hit_at` can be used for picking and painting.
     pub fn render_viewport(&self, r: &mut Renderer) {
         let style = self.viewport_style();
-        self.render_core(r, self.active_camera(), &style);
+        let cam = self.active_camera();
+        self.render_core(r, cam, &style);
+        self.draw_refs(r, &cam);
     }
     /// Renders the main viewport at an arbitrary pixel size (the size of the widget on screen), independent of the
     /// project's render resolution. Vertex snapping scales with the width so the retro wobble keeps the same look.
@@ -645,8 +704,10 @@ impl Editor {
         style.width = w.max(1);
         style.height = h.max(1);
         r.layer_aspect = Some(aspect);
-        self.render_core(r, self.active_camera(), &style);
+        let cam = self.active_camera();
+        self.render_core(r, cam, &style);
         r.layer_aspect = None;
+        self.draw_refs(r, &cam);
     }
     /// The camera the final picture is taken with (not the editor's free camera).
     pub fn final_camera(&self) -> Camera {
@@ -812,6 +873,9 @@ impl Editor {
     pub fn delete_object(&mut self, id: u32) -> bool {
         if self.project.scene.object(id).is_none() {
             return false;
+        }
+        if self.edit.as_ref().is_some_and(|s| s.object == id) {
+            self.edit_exit();
         }
         self.end_group();
         self.record(Slot::Whole);
@@ -1105,7 +1169,7 @@ impl Editor {
         let before = self.sel_before(c);
         let Some(t) = self.canvas_mut(c) else { return };
         match b.tool {
-            Tool::Line | Tool::Rect | Tool::RectFilled => self.shape = Some((c, p, t.clone())),
+            Tool::Line | Tool::Rect | Tool::RectFilled | Tool::Gradient => self.shape = Some((c, p, t.clone())),
             _ => {
                 paint::apply_point(t, &b, p);
                 self.stroke_last = Some((c, p));
@@ -1132,7 +1196,7 @@ impl Editor {
         }
         let last = self.stroke_last.filter(|(lc, _)| *lc == c).map(|(_, lp)| lp);
         // a stroke only continues when its press was accepted (a locked or hidden layer refuses it)
-        if matches!(b.tool, Tool::Brush | Tool::Eraser) && last.is_some() {
+        if b.tool.is_continuous() && last.is_some() {
             let before = self.sel_before(c);
             if let Some(t) = self.canvas_mut(c) {
                 paint::apply_stroke(t, &b, last, p);
@@ -1150,6 +1214,9 @@ impl Editor {
     /// Paints on the model in the viewport. `frame` is the most recently rendered frame (the UV under the cursor is read from it).
     /// Returns true if something was painted or a colour was picked.
     pub fn paint_press(&mut self, frame: &Frame, x: i32, y: i32) -> bool {
+        if self.project_paint && matches!(self.brush.tool, Tool::Brush | Tool::Eraser) {
+            return self.proj_press(frame, x, y);
+        }
         let Some(info) = self.pick_info(frame.hit_at(x, y)) else { return false };
         let Some(tex) = info.tex else { return false };
         let Some(c) = self.canvas_for(info.object, info.asset, tex) else {
@@ -1162,7 +1229,10 @@ impl Editor {
         true
     }
     pub fn paint_drag(&mut self, frame: &Frame, from: (i32, i32), to: (i32, i32)) -> usize {
-        if !matches!(self.brush.tool, Tool::Brush | Tool::Eraser) {
+        if self.proj.is_some() {
+            return self.proj_drag(frame, from, to);
+        }
+        if !self.brush.tool.is_continuous() {
             return 0;
         }
         let steps = (to.0 - from.0).abs().max((to.1 - from.1).abs()).max(1);
@@ -1202,6 +1272,12 @@ impl Editor {
     /// Applies an operation to the whole texture of a canvas.
     pub fn texture_op(&mut self, c: Canvas, op: TexOp) -> bool {
         self.end_group();
+        self.begin_group();
+        let r = self.texture_op_inner(c, op);
+        self.end_group();
+        r
+    }
+    fn texture_op_inner(&mut self, c: Canvas, op: TexOp) -> bool {
         if !self.canvas_prepare(c) {
             return false;
         }
@@ -1393,10 +1469,12 @@ impl Editor {
     /// Replaces the whole content of a canvas (for example with a loaded image) as a single undo step.
     pub fn replace_canvas(&mut self, c: Canvas, tex: Texture) -> bool {
         self.end_group();
+        self.begin_group();
         if !self.canvas_prepare(c) {
+            self.end_group();
             return false;
         }
-        match self.canvas_mut(c) {
+        let ok = match self.canvas_mut(c) {
             Some(t) => {
                 let name = t.name.clone();
                 *t = Texture { name, ..tex };
@@ -1404,7 +1482,9 @@ impl Editor {
                 true
             }
             None => false,
-        }
+        };
+        self.end_group();
+        ok
     }
     /// Loads a PNG/JPEG/BMP/TGA/PPM file from disk into a canvas. Images larger than 2048 px are scaled down:
     /// that is plenty for low-resolution game textures and keeps memory use predictable.
@@ -1565,6 +1645,10 @@ impl Editor {
     pub fn enable_texture_layers(&mut self) -> bool {
         let Some((a, t)) = self.stack_address() else { return false };
         if self.project.assets[a].stack(t).is_some() {
+            return false;
+        }
+        if self.project.assets[a].indexed(t).is_some() {
+            self.status = "Turn off indexed colour first: layers work on full-colour pictures".into();
             return false;
         }
         self.end_group();
@@ -2761,5 +2845,173 @@ mod tests {
         let bytes: usize = ed.undo.iter().map(|e| e.data.bytes()).sum();
         assert!(bytes <= UNDO_BYTES + (16 << 20), "history holds {bytes} bytes");
         assert!(ed.undo(), "recent steps are still undoable");
+    }
+
+    fn tri_count(ed: &Editor) -> usize {
+        ed.selected_model().unwrap().meshes.iter().map(|m| m.tris.len()).sum()
+    }
+    #[test]
+    fn edit_mode_extrude_bevel_undo_and_save_keep_polygons() {
+        let mut ed = cube_editor();
+        let tris0 = tri_count(&ed);
+        assert!(ed.edit_enter());
+        assert_eq!(ed.edit_stats().unwrap().3, 6, "a cube has six quads");
+        ed.edit_set_select_mode(crate::editmesh::SelectMode::Face);
+        ed.edit_select_all(false);
+        ed.edit_op(|m| {
+            m.sel_f.insert(0);
+            m.sync_selection();
+        });
+        assert!(ed.edit_extrude_begin((100.0, 100.0), 200, 200));
+        ed.edit_drag_update((100.0, 60.0), DragSnap::default());
+        ed.edit_drag_end(true);
+        assert_eq!(ed.edit_stats().unwrap().3, 10, "extruding a quad adds four side faces");
+        ed.edit_select_all(true);
+        ed.edit_set_select_mode(crate::editmesh::SelectMode::Edge);
+        assert!(ed.edit_bevel_apply(crate::editmesh::BevelOptions { width: 0.05, segments: 1, clamp: true }));
+        assert!(tri_count(&ed) > tris0);
+        ed.edit_exit();
+        // the polygons are saved with the project and restored when editing again
+        let dir = std::env::temp_dir().join(format!("jank_edit_{}", std::process::id()));
+        let _ = std::fs::create_dir_all(&dir);
+        let path = dir.join("e.jank");
+        ed.save_as(&path).unwrap();
+        let mut back = Editor::open(&path).unwrap();
+        back.select_object(ed.selected_object);
+        let faces = ed.project.assets[0].topology.as_ref().unwrap().1.faces.len();
+        assert!(back.edit_enter());
+        let st = back.edit_stats().unwrap();
+        assert_eq!(st.2 + st.3 + st.4, faces);
+        let _ = std::fs::remove_dir_all(&dir);
+        // undo walks back to the plain cube
+        while ed.can_undo() && tri_count(&ed) != tris0 {
+            ed.undo();
+        }
+        assert_eq!(tri_count(&ed), tris0);
+    }
+    #[test]
+    fn object_boolean_difference_cuts_and_removes_the_cutter() {
+        let mut ed = cube_editor();
+        let a = ed.selected_object.unwrap();
+        let b = ed.add_primitive(Primitive::Cube);
+        let mut t = ed.object_transform(b).unwrap();
+        t.pos = Vec3::new(0.5, 0.5, 0.5);
+        ed.set_object_transform(b, t);
+        ed.select_object(Some(a));
+        let before = tri_count(&ed);
+        assert!(ed.boolean_with(b, crate::editmesh::BoolOp::Difference, true));
+        assert!(ed.project.scene.object(b).is_none());
+        assert!(tri_count(&ed) > before);
+        assert!(ed.undo());
+        assert!(ed.project.scene.object(b).is_some());
+    }
+    #[test]
+    fn ik_drag_pulls_the_joint_towards_the_mouse() {
+        let mut ed = rigged();
+        ed.set_mode(Mode::Pose);
+        ed.ensure_animation();
+        ed.ik_chain = 2;
+        let (w, h) = (400, 300);
+        let start = ed.bone_joint_world(2).unwrap();
+        let cam = ed.active_camera();
+        let goal_world = start + Vec3::new(1.0, -0.8, 0.0);
+        let s = cam.project(goal_world, w, h).unwrap();
+        ed.begin_group();
+        assert!(ed.ik_drag(2, s.0, s.1, w, h));
+        ed.end_group();
+        let end = ed.bone_joint_world(2).unwrap();
+        let se = cam.project(end, w, h).unwrap();
+        let d0 = ((cam.project(start, w, h).unwrap().0 - s.0).powi(2) + (cam.project(start, w, h).unwrap().1 - s.1).powi(2)).sqrt();
+        let d1 = ((se.0 - s.0).powi(2) + (se.1 - s.1).powi(2)).sqrt();
+        assert!(d1 < d0 * 0.3, "the joint follows the mouse: {d0} -> {d1}");
+        assert!(ed.undo());
+        assert!((ed.bone_joint_world(2).unwrap() - start).length() < 1e-4);
+    }
+    #[test]
+    fn reference_pictures_show_in_the_viewport_only() {
+        let mut ed = cube_editor();
+        let red = Texture::new("ref", 8, 8, [255, 0, 0, 255]);
+        let i = ed.ref_add(red, "ref");
+        ed.ref_edit(i, |r| {
+            r.on_top = true;
+            r.opacity = 1.0;
+            r.size = 50.0;
+        });
+        ed.selected_ref = None;
+        let r = rendered(&ed);
+        let (cx, cy) = center_hit(&r);
+        assert_eq!(r.frame.color[(cy as u32 * r.frame.w + cx as u32) as usize][..3], [255, 0, 0], "drawn over the model");
+        assert!(r.frame.hit_at(cx, cy).is_some(), "the picture is never picked as a model");
+        assert_eq!(ed.ref_pick(cx as f32, cy as f32, r.frame.w, r.frame.h), Some(i));
+        let mut fin = Renderer::new(1, 1);
+        ed.render_preview(&mut fin);
+        assert!(fin.frame.color.iter().all(|c| c[..3] != [255, 0, 0]), "never in the final picture");
+        // behind the model when not on top
+        ed.ref_edit(i, |r| {
+            r.on_top = false;
+            r.transform.pos = Vec3::new(0.0, 0.0, -5.0);
+        });
+        let r = rendered(&ed);
+        assert_ne!(r.frame.color[(cy as u32 * r.frame.w + cx as u32) as usize][..3], [255, 0, 0]);
+        assert!(ed.ref_remove(i));
+        assert!(ed.project.scene.refs.is_empty());
+        assert!(ed.undo());
+        assert_eq!(ed.project.scene.refs.len(), 1);
+    }
+    #[test]
+    fn indexed_texture_snaps_paint_and_recolours_by_palette() {
+        let mut ed = cube_editor();
+        let pal = crate::palette::Palette::new("two", vec![[0, 0, 0, 255], [255, 255, 255, 255]]);
+        assert!(ed.indexed_enable(0, 0, pal));
+        let in_pal = |ed: &Editor| ed.project.assets[0].model.textures[0].px.iter().all(|p| p[3] < 128 || p[..3] == [0, 0, 0] || p[..3] == [255, 255, 255]);
+        assert!(in_pal(&ed));
+        let r = rendered(&ed);
+        let (cx, cy) = center_hit(&r);
+        ed.brush = Brush { color: [250, 240, 230, 255], size: 3.0, pixel: false, ..Default::default() };
+        assert!(ed.paint_press(&r.frame, cx, cy));
+        ed.paint_drag(&r.frame, (cx, cy), (cx + 10, cy));
+        ed.paint_release();
+        assert!(in_pal(&ed), "painted pixels snap to the palette");
+        assert!(ed.indexed_set_color(0, 0, 1, [255, 0, 0, 255]));
+        let reds = ed.project.assets[0].model.textures[0].px.iter().filter(|p| p[..3] == [255, 0, 0]).count();
+        assert!(reds > 0);
+        assert!(ed.undo());
+        assert_eq!(ed.project.assets[0].model.textures[0].px.iter().filter(|p| p[..3] == [255, 0, 0]).count(), 0);
+        assert!(!ed.enable_texture_layers(), "layers and indexed colour exclude each other");
+    }
+    #[test]
+    fn projection_paint_is_one_undo_step() {
+        let mut ed = cube_editor();
+        let before = ed.selected_model().unwrap().textures[0].clone();
+        let r = rendered(&ed);
+        let (cx, cy) = center_hit(&r);
+        ed.project_paint = true;
+        ed.brush = Brush { color: [0, 255, 0, 255], size: 4.0, pixel: true, ..Default::default() };
+        assert!(ed.paint_press(&r.frame, cx, cy));
+        assert!(ed.proj_radius().unwrap() >= 1.0);
+        assert!(ed.paint_drag(&r.frame, (cx, cy), (cx + 20, cy + 5)) > 0);
+        ed.paint_release();
+        let after = ed.selected_model().unwrap().textures[0].clone();
+        assert!(after.px.iter().filter(|p| **p == [0, 255, 0, 255]).count() > 4);
+        assert!(ed.undo());
+        assert_eq!(ed.selected_model().unwrap().textures[0], before);
+    }
+    #[test]
+    fn graph_keys_and_easing() {
+        let mut ed = cube_editor();
+        let id = ed.selected_object.unwrap();
+        ed.set_mode(Mode::Animate);
+        ed.add_frame();
+        let ch = crate::anim::Channel { object: id, kind: crate::anim::ChannelKind::Pos(0) };
+        assert!(ed.graph_set_key(1, &ch, 4.0));
+        assert_eq!(ed.graph_key(1, &ch), Some(4.0));
+        assert!(ed.graph_channels().contains(&ch));
+        let hold = ed.animation().unwrap().frames[0].hold as f32;
+        assert!(ed.graph_set_ease(0, crate::anim::Ease::LINEAR));
+        let lin = ed.graph_sample(&ch, hold * 0.25).unwrap();
+        assert!((lin - 1.0).abs() < 0.05, "linear in-between: {lin}");
+        ed.graph_set_ease(0, crate::anim::Ease::EASE_IN);
+        let slow = ed.graph_sample(&ch, hold * 0.25).unwrap();
+        assert!(slow < lin, "ease-in starts slower: {slow} < {lin}");
     }
 }

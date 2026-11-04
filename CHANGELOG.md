@@ -3,6 +3,27 @@
 All notable changes to Jank! are listed here, newest first.
 Versions follow [docs/VERSIONING.md](docs/VERSIONING.md): `MAJOR.MINOR.PATCH[-channel]+BUILD`.
 
+## 0.2.0-alpha (build 31031)
+
+### Added
+- **Edit mode for meshes** (`Tab`, Model mode): vertices, edges and polygons as in Blender. `1`/`2`/`3` vertex, edge and face select; click, Shift+click, box select (Shift adds, Ctrl removes), Alt+click edge loops, Ctrl+Alt+click rings, Ctrl+click shortest path, `L` (under the mouse) / `Ctrl+L` linked, `Ctrl+I` invert, `Ctrl+=` / `Ctrl+-` grow and shrink, `H` / `Shift+H` / `Alt+H` hide and reveal. `G`/`R`/`S` move, rotate and scale with `X`/`Y`/`Z` axis locks (Shift+axis excludes it), typed values, Ctrl snapping, Shift for fine steps and proportional editing (`O`, wheel changes the radius). Tools: extrude (`E`), inset (`I`), bevel (`Ctrl+B`, segments, also vertex bevel), loop cut and slide (`Ctrl+R`, wheel for more cuts), knife (`K`), subdivide, fill (`F`), bridge loops, connect (`J`), duplicate (`Shift+D`), split (`Y`), separate (`P`), delete / dissolve (`X`, `Ctrl+X`), shrink / fatten (`Alt+S`), edge slide after a loop cut (`Shift+V`), triangulate (`Ctrl+T`), tris to quads (`Alt+J`), merge (`M`: centre, last clicked, collapse, by distance), triangulate, tris to quads, flip and recalculate normals, shade smooth / flat, symmetrize, mark and clear seams, UV unwrap from seams (`U`), mirror X editing and X-ray (`Alt+Z`). Quads and n-gons are kept between sessions (new `EDIT` chunk).
+- **Boolean operations**: union, difference and intersection of two objects (Model → Boolean, choose the cutter, optionally delete it) and inside one mesh in Edit mode (selected polygons against the rest).
+- **Indexed colour**: a texture can be locked to a palette; every pixel stores an index, recolouring a palette entry repaints the whole texture (like PlayStation CLUTs). Back to full colour at any time.
+- **Projection painting**: paint through the view onto every visible object, across UV seams.
+- **Painting**: smudge, blur, dodge, burn and gradient tools; second colour (`X` swaps); tool strength; symmetric painting; stroke stabilizer in the texture editor and the viewport.
+- **Inverse kinematics** in Pose and Animate mode (`Shift+I`): drag the end of a chain and the parent bones follow (chain length 1-8 bones).
+- **Graph editor**: the *Curves* tab of the timeline shows every animated value as a curve; drag keys up and down, filter by the selected object, normalize, and edit the Bézier easing of each in-between (linear, in, out, in-out, back). Easing is saved (new `EASE` chunk).
+- **Reference pictures in 3D** (Model → Add reference image): front, side, top or facing the view; size, opacity, in front of or behind the models; draggable in the view; never rendered or exported (new `REFS` chunk).
+- **Radial menu** on `Space` (hold, point, release; or tap and click), as in Krita; it changes with the mode and shows recent colours while painting.
+- **Themes as files**: six built-in themes (Graphite, Midnight, Studio Grey, PlayStation, Amber CRT and the light Paper); `*.theme` text files in `<config>/themes` are loaded too, with *Save a copy to edit* and *Reload theme files* in Settings → Appearance.
+- **What's new** window (Help → What's new), shown once after an update.
+- **Hover highlight**: the object under the mouse is outlined (Settings → Viewport → Highlight).
+- `Mesh` and `Paint` menus.
+
+### Changed
+- Play/pause is now `Shift+Space`, because `Space` opens the radial menu.
+- Keys can belong to a context (Edit mode, painting): there they shadow the global key with the same chord, so `G` moves vertices in Edit mode and draws gradients while painting.
+
 ## 0.2.0-alpha (build 31030)
 
 ### Added

@@ -6,6 +6,7 @@ Two references only - **Obsidian** (the workspace: deep graphite surfaces, a thi
 - Graphite surfaces `BG0..BG3` (`#131316` `#1b1b1f` `#26262b` `#313137`), hairlines `LINE` (`#3a3a41`) / `LINE_SOFT` (`#27272c`); no pure black.
 - Bevel colours `HILITE` (`#3d3d45`, 1 px top edge of a raised plate) and `SHADE` (`#0d0d10`, outline and bottom edge). They are used for nothing else.
 - ONE accent, chosen by the user in Settings → Appearance: Violet `#8a7bf2` (default), Blue `#5c9cf0`, Teal `#3cb4a6`, Green `#7dbf69`, Amber `#dda03f`, Rose `#e0688a`. Read it with `theme::accent()` at paint time - never cache it in a `const`. It marks selection, the active mode, tool, tab and focus, and nothing else.
+- Colours come from the active **theme** (`core/src/themes.rs`): Graphite (default, the values above), Midnight, Studio Grey, PlayStation, Amber CRT and the light Paper, plus `*.theme` files in `<config>/themes` (`key = #rrggbb`, missing keys fall back to Graphite, an optional `accent` overrides the Settings choice, `light = true` for light themes). Read colours through the `theme.rs` functions at paint time. Text and icons on selected or accent-tinted plates use `BRIGHT()` (white on dark themes, near-black on light ones), never a literal white.
 - `WARN` and `DANGER` only mean warning and destructive. Axis colours appear only on gizmos and X/Y/Z labels. Onion-skin colours only on ghosts.
 
 ## Shapes and type
@@ -28,8 +29,15 @@ Two references only - **Obsidian** (the workspace: deep graphite surfaces, a thi
 - Timeline: transport, animation tabs, frame operations and Aseprite-style cels (number header, cel dot filled when the frame has a drawing, tween arrow, hold width).
 - Status bar (22 px, can be hidden): mode icon and message on the left; mode, selection, optional frame rate and the build on the right.
 
+## Viewport overlays
+- Hover highlight: a 1-2 px outline in a light accent mix around the object under the mouse (drawn on the overlay surface, never in the render).
+- Edit mode: edges as hairlines, vertices as 4 px squares, face dots in Face mode; selection in the accent, the active element brighter, the element under the mouse in white. Modal tools show one readout pill at the top of the view (operation, value, the keys that apply).
+- Radial menu: a dark disc with eight icon slots, the hot slot filled with the accent and named in the middle; recent colours on an inner ring. It opens under the mouse and never leaves the window.
+- Reference pictures are drawn faint and never get selection colours except a thin accent frame while dragged.
+
 ## Windows and dialogs
 - Windows open centred with `default_pos` (see `app/src/compat.rs`) and can be dragged. Do not use `Window::anchor`: it pins the window. After an appearance change the Settings window is put back in the centre for a few frames, because egui re-measures it.
 - Settings use an Obsidian-style navigation list on the left and sections on the right. Every option applies at once and is saved automatically.
 - Every control has a tooltip. Destructive actions say what they do.
+- *What's new* lists the changes of the version as icon, title and two lines of text; a heading runs the command it describes. It opens once after an update and from Help.
 - Start-up uses the splash art for the season (see `docs/SPLASH_GUIDE.md`). The splash screen is always shown; there is deliberately no setting for it.

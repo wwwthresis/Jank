@@ -260,6 +260,14 @@ pub struct Settings {
     /// Strength of the onion-skin ghosts, 0.1..=1.
     pub onion_opacity: f32,
     pub guides: Guides,
+    /// Id of the interface theme (see `themes`).
+    pub theme: String,
+    /// Build number whose "What's new" was last shown (0 = never).
+    pub last_seen_build: u32,
+    /// Smoothing of brush strokes (0 = off .. 1 = very smooth, the line trails behind the mouse).
+    pub stabilizer: f32,
+    /// Outline the object under the mouse in the viewport.
+    pub hover_highlight: bool,
 }
 
 impl Default for Settings {
@@ -292,6 +300,10 @@ impl Default for Settings {
             pixel_grid: true,
             onion_opacity: 0.6,
             guides: Guides::Off,
+            theme: "graphite".into(),
+            last_seen_build: 0,
+            stabilizer: 0.0,
+            hover_highlight: true,
         }
     }
 }
@@ -334,6 +346,7 @@ impl Settings {
         fix(&mut l.right_width, 200.0, 600.0, 290.0);
         fix(&mut l.texture_width, 260.0, 1200.0, 470.0);
         fix(&mut l.timeline_height, 120.0, 400.0, 178.0);
+        self.stabilizer = if self.stabilizer.is_finite() { self.stabilizer.clamp(0.0, 1.0) } else { 0.0 };
         self.render_threads = self.render_threads.min(32);
         let w = self.preview.width;
         self.preview.width = if w.is_finite() { w.clamp(PREVIEW_WIDTH_MIN, PREVIEW_WIDTH_MAX) } else { PreviewPrefs::default().width };
@@ -387,6 +400,10 @@ impl Settings {
         s.push_str(&format!("pixel_grid = {}\n", self.pixel_grid));
         s.push_str(&format!("onion_opacity = {:.2}\n", self.onion_opacity));
         s.push_str(&format!("guides = {}\n", self.guides.id()));
+        s.push_str(&format!("theme = {}\n", self.theme));
+        s.push_str(&format!("last_seen_build = {}\n", self.last_seen_build));
+        s.push_str(&format!("stabilizer = {:.2}\n", self.stabilizer));
+        s.push_str(&format!("hover_highlight = {}\n", self.hover_highlight));
         if let Some(d) = &self.last_dir {
             s.push_str(&format!("last_dir = {d}\n"));
         }
@@ -464,6 +481,10 @@ impl Settings {
                 "pixel_grid" => parse_bool(v).map(|b| st.pixel_grid = b).unwrap_or_else(bad),
                 "onion_opacity" => v.parse().map(|x| st.onion_opacity = x).unwrap_or_else(|_| bad()),
                 "guides" => Guides::parse(v).map(|c| st.guides = c).ok_or(()).unwrap_or_else(|_| bad()),
+                "theme" => st.theme = v.chars().take(48).collect(),
+                "last_seen_build" => v.parse().map(|x| st.last_seen_build = x).unwrap_or_else(|_| bad()),
+                "stabilizer" => v.parse().map(|x| st.stabilizer = x).unwrap_or_else(|_| bad()),
+                "hover_highlight" => parse_bool(v).map(|b| st.hover_highlight = b).unwrap_or_else(bad),
                 "last_dir" => st.last_dir = Some(v.to_string()),
                 "recent" => recent.push(v.to_string()),
                 _ => {} // written by a newer version: ignore silently

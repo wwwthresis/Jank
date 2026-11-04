@@ -7,11 +7,11 @@ Two crates, one direction of dependency: `jank` (GUI) -> `psxcore` (engine). The
 | Area | Modules |
 |---|---|
 | Math / data | `math`, `mesh`, `scene`, `texture`, `pose`, `anim`, `json` |
-| Geometry ops | `modeling`, `decimate` (QEM), `selection`, `uvisland`, `gizmo` |
+| Geometry ops | `modeling`, `decimate` (QEM), `selection`, `uvisland`, `gizmo`, `editmesh` (polygon mesh of Edit mode: `mod` conversion to and from triangle meshes, `select` loops/rings/paths/linked, `ops` extrude, inset, loop cut, knife, merge, dissolve, fill, bridge, ..., `bevel`, `boolean` (BSP-tree CSG on closed meshes, welded and merged back into clean polygons), `uv` seams unwrap), `ik` (CCD chain solver on skeleton poses) |
 | Drawing | `paint`, `palette`, `layers` (layer stacks, blending), `lighting` (time of day, shadow settings), `raster` (multithreaded banded software PSX rasterizer: scene layers behind and in front), `shadow` (shadow map: multithreaded depth from the light, block min/max tables for one-lookup fully-lit/fully-shadowed tests, soft PCF lookup, a small cache of maps reused while only the camera moves), `compose` (scene to render instances, shadow inputs) |
-| Editor state | `editor` (modes, tools, undo/redo, selection, pixel clipboard) |
+| Editor state | `editor` (modes, tools, undo/redo, selection, pixel clipboard); `editor/editmode` (Edit-mode session: selection, modal grab/rotate/scale with axis locks and typed values, proportional editing, undo as one step per operation); `editor/extras` (booleans, reference pictures, IK drags, graph keys and easing, indexed colour, projection painting) |
 | Files | `project` (`.jank`), `import` (OBJ/STL/PLY), `gltf`, `export`, `decode/*`, `encode/*` (PNG, JPEG, BMP, TGA, PPM, GIF, AVI, deflate), `jobs` |
-| Application services | `commands` (command catalogue + fuzzy search), `keymap` (remappable chords), `settings`, `recovery` (autosave/crash), `filebrowser`, `splash` (season table), `version` |
+| Application services | `commands` (command catalogue + fuzzy search), `keymap` (remappable chords), `settings`, `themes` (built-in themes and `*.theme` files), `recovery` (autosave/crash), `filebrowser`, `splash` (season table), `version` |
 
 ## jank (`app/src`)
 
@@ -26,7 +26,11 @@ Two crates, one direction of dependency: `jank` (GUI) -> `psxcore` (engine). The
 | `dialogs`, `commands_ui` | file browser, About/Licences, palette, settings, recovery |
 | `splash`, `startup`, `appinfo`, `sysdate`, `crash` | splash screens, startup loader with real progress, version/About data, date helper, crash hook |
 | `paintui`, `colorpick`, `preview`, `perf` | drawing studio (layers, selection, palettes), colour wheel, render preview window, frame statistics |
+| `editui` | Edit mode: mesh commands, modal keys, mouse input (select, box, loop cut, knife), overlays (vertices, edges, face dots), tool panel |
+| `extras_ui` | radial menu, booleans, reference pictures, IK, indexed colour, What's new, themes section, hover outline and edit tint (overlay surface), graph editor and ease editor |
 | `compat` | the only place that touches version-sensitive egui calls |
+
+Commands have a context (`commands::Context`: Global, MeshEdit, Paint). `Keymap::commands_in` lets a key of an active context shadow the global command with the same chord.
 
 Rules: new logic goes into `core` with tests first; `app` only draws and forwards input. All user actions are `commands::CommandId`s so menu, palette and hotkeys share one path (`App::run_command`).
 

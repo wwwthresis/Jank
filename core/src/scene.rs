@@ -49,17 +49,49 @@ pub struct Scene {
     pub layers: Vec<Layer>,
     pub layers_back: usize,
     pub lighting: Lighting,
+    /// Reference pictures placed in 3D space to model by (never part of the final render).
+    pub refs: Vec<RefImage>,
     next_id: u32,
+}
+
+/// A reference picture standing in the scene: a front or side drawing, a photo, a blueprint.
+#[derive(Clone, Debug, PartialEq)]
+pub struct RefImage {
+    pub name: String,
+    /// Shared, so undo snapshots of the scene do not copy the pixels.
+    pub image: std::sync::Arc<crate::texture::Texture>,
+    pub transform: Transform,
+    /// Height of the picture in world units (the width follows its proportions).
+    pub size: f32,
+    /// 0..1
+    pub opacity: f32,
+    pub visible: bool,
+    /// Locked pictures cannot be picked or moved by accident.
+    pub locked: bool,
+    /// Draw over the models instead of being hidden behind them.
+    pub on_top: bool,
+}
+impl RefImage {
+    pub fn new(name: &str, image: crate::texture::Texture) -> RefImage {
+        RefImage { name: name.into(), image: std::sync::Arc::new(image), transform: Transform::default(), size: 2.0, opacity: 0.5, visible: true, locked: false, on_top: false }
+    }
+    /// The four corners in world space (top-left, top-right, bottom-right, bottom-left).
+    pub fn corners(&self) -> [Vec3; 4] {
+        let h = self.size * 0.5;
+        let w = h * self.image.w.max(1) as f32 / self.image.h.max(1) as f32;
+        let m = self.transform.matrix();
+        [Vec3::new(-w, h, 0.0), Vec3::new(w, h, 0.0), Vec3::new(w, -h, 0.0), Vec3::new(-w, -h, 0.0)].map(|p| m.transform_point(p))
+    }
 }
 impl Default for Scene {
     fn default() -> Self {
-        Self { objects: vec![], camera: Camera::default(), style: PsxStyle::ps1_classic(), layers: vec![], layers_back: 0, lighting: Lighting::default(), next_id: 1 }
+        Self { objects: vec![], camera: Camera::default(), style: PsxStyle::ps1_classic(), layers: vec![], layers_back: 0, lighting: Lighting::default(), refs: vec![], next_id: 1 }
     }
 }
 impl Scene {
     /// A copy without the layer pictures (used by undo snapshots, which store layers separately).
     pub fn clone_without_layers(&self) -> Scene {
-        Scene { objects: self.objects.clone(), camera: self.camera, style: self.style.clone(), layers: Vec::new(), layers_back: 0, lighting: self.lighting.clone(), next_id: self.next_id }
+        Scene { objects: self.objects.clone(), camera: self.camera, style: self.style.clone(), layers: Vec::new(), layers_back: 0, lighting: self.lighting.clone(), refs: self.refs.clone(), next_id: self.next_id }
     }
     /// True if layer `i` is drawn behind the 3D objects.
     pub fn layer_is_back(&self, i: usize) -> bool {

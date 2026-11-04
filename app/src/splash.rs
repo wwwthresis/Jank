@@ -102,7 +102,7 @@ impl Splash {
         let frac = self.shown;
         let label = if self.t < INTRO_SECS { "Starting Jank!" } else { boot.label };
 
-        egui::CentralPanel::default().frame(compat::frame(BG0, 0.0)).show(ctx, |ui| {
+        egui::CentralPanel::default().frame(compat::frame(BG0(), 0.0)).show(ctx, |ui| {
             let r = ui.max_rect();
             let p = ui.painter();
             if let Some(tex) = &self.tex {
@@ -110,12 +110,12 @@ impl Splash {
             }
             // the status strip: what is being loaded right now, and the real fraction done
             let strip = Rect::from_min_max(egui::pos2(r.min.x, r.max.y - 26.0), r.max);
-            p.rect_filled(strip, 0.0, alpha_c(BG0, (a as f32 * 0.82) as u8));
-            compat::text(p, egui::pos2(strip.min.x + 10.0, strip.center().y - 1.0), egui::Align2::LEFT_CENTER, label, 12.0, alpha_c(TEXT, a));
-            compat::text(p, egui::pos2(strip.max.x - 10.0, strip.center().y - 1.0), egui::Align2::RIGHT_CENTER, &format!("{:.0}%", frac * 100.0), 12.0, alpha_c(DIM, a));
+            p.rect_filled(strip, 0.0, alpha_c(BG0(), (a as f32 * 0.82) as u8));
+            compat::text(p, egui::pos2(strip.min.x + 10.0, strip.center().y - 1.0), egui::Align2::LEFT_CENTER, label, 12.0, alpha_c(TEXT(), a));
+            compat::text(p, egui::pos2(strip.max.x - 10.0, strip.center().y - 1.0), egui::Align2::RIGHT_CENTER, &format!("{:.0}%", frac * 100.0), 12.0, alpha_c(DIM(), a));
             let bar = Rect::from_min_size(egui::pos2(r.min.x, r.max.y - 3.0), vec2(r.width() * frac, 3.0));
             p.rect_filled(bar, 0.0, alpha_c(accent(), a));
-            compat::stroke_rect(p, r, 0.0, compat::stroke(1.0, alpha_c(LINE, a)));
+            compat::stroke_rect(p, r, 0.0, compat::stroke(1.0, alpha_c(LINE(), a)));
         });
         ctx.request_repaint();
         State::Running

@@ -110,6 +110,9 @@ impl App {
     /// Runs one command. Every button, menu entry, palette hit and shortcut ends up here.
     pub fn run_command(&mut self, ctx: &Context, id: CommandId) {
         use CommandId::*;
+        if self.run_mesh_command(id) {
+            return;
+        }
         match id {
             NewProject => self.new_project(),
             OpenProject => self.dialog = Some(dialogs::browser(Purpose::OpenProject)),
@@ -184,6 +187,30 @@ impl App {
             OpenSettings => self.dialog = Some(Dialog::Settings(SettingsState::new(self.settings.ui_scale))),
             OpenAbout => self.dialog = Some(Dialog::About(AboutTab::Overview)),
             OpenLicenses => self.dialog = Some(Dialog::About(AboutTab::Licenses)),
+            WhatsNew => self.dialog = Some(Dialog::WhatsNew),
+            RadialMenu => self.radial_open(ctx),
+            EditModeToggle => {
+                let was = self.ed.edit_active();
+                let now = self.ed.edit_toggle();
+                self.edui.tool = crate::editui::EditTool::Select;
+                self.edui.boxing = None;
+                self.edui.press = None;
+                if !was && !now {
+                    let s = self.ed.status.clone();
+                    self.info(if s.is_empty() { "Select an object to edit its mesh".to_string() } else { s });
+                }
+            }
+            BooleanUnion => self.run_boolean(psxcore::editmesh::BoolOp::Union),
+            BooleanDifference => self.run_boolean(psxcore::editmesh::BoolOp::Difference),
+            BooleanIntersect => self.run_boolean(psxcore::editmesh::BoolOp::Intersect),
+            AddReference => self.dialog = Some(dialogs::browser(Purpose::AddReference)),
+            ToggleIk => {
+                self.ed.ik_chain = if self.ed.ik_chain > 0 { 0 } else { self.ik_len.max(1) };
+                self.info(if self.ed.ik_chain > 0 { format!("IK on: dragging a joint bends {} bone(s) above it", self.ed.ik_chain) } else { "IK off".to_string() });
+            }
+            ToolBrush | ToolEraser | ToolFill | ToolGradient | ToolPicker | ToolSmudge | ToolBlur | SwapColors | BrushSmaller | BrushBigger | ToggleSymmetry | ToggleProjectionPaint => self.run_paint_command(id),
+            // Edit-mode commands were handled by `run_mesh_command` above
+            _ => {}
         }
     }
 
@@ -200,7 +227,9 @@ impl App {
                 }
             }
             Mode::Model => {
-                if !self.ed.selected_faces.is_empty() {
+                if self.ed.edit_active() {
+                    self.ed.edit_delete_selected();
+                } else if !self.ed.selected_faces.is_empty() {
                     self.ed.delete_selected_faces();
                 } else if let Some(id) = self.ed.selected_object {
                     self.ed.delete_object(id);
@@ -224,11 +253,26 @@ impl App {
     }
 
     pub fn shortcuts(&mut self, ctx: &Context) {
-        if self.dialog.is_some() || ctx.wants_keyboard_input() {
+        if self.dialog.is_some() || ctx.wants_keyboard_input() || self.radial.is_some() {
+            self.tab_chords.clear();
             return;
         }
-        for chord in compat::pressed_chords(ctx) {
-            for id in self.settings.keymap.commands_for(&chord) {
+        // a running Edit-mode tool owns the keyboard (axis locks, typed values, Enter / Esc)
+        if self.edit_modal_keys(ctx) {
+            return;
+        }
+        use psxcore::commands::Context as Cx;
+        let mut active = vec![Cx::Global];
+        if self.ed.edit_active() {
+            active.push(Cx::MeshEdit);
+        }
+        if self.painting() {
+            active.push(Cx::Paint);
+        }
+        let mut chords = std::mem::take(&mut self.tab_chords);
+        chords.extend(compat::pressed_chords(ctx));
+        for chord in chords {
+            for id in self.settings.keymap.commands_in(&chord, &active) {
                 self.run_command(ctx, id);
             }
         }
@@ -270,7 +314,8 @@ impl App {
     /// Pushes the appearance settings (accent, density, text size) to egui when they changed.
     /// Called after the frame's UI, so a whole frame is always laid out with one set of metrics.
     pub fn sync_look(&mut self, ctx: &Context) {
-        let look = crate::theme::Look { accent: self.settings.accent.rgb(), density: self.settings.density, text: self.settings.text_size };
+        let t = self.current_theme();
+        let look = crate::theme::Look { accent: t.accent.unwrap_or(self.settings.accent.rgb()), density: self.settings.density, text: self.settings.text_size, colors: t.colors, light: t.light };
         if self.hk.look != Some(look) {
             crate::theme::apply_look(ctx, look);
             self.hk.look = Some(look);
@@ -344,8 +389,8 @@ impl App {
         egui::Window::new("Recover unsaved work").collapsible(false).resizable(false).default_pos(compat::centered_pos(ctx, vec2(420.0, 170.0))).show(ctx, |ui| {
             ui.set_min_width(440.0);
             ui.horizontal(|ui| {
-                crate::widgets::icon_inline(ui, Icon::Warn, WARN);
-                ui.label(egui::RichText::new("Jank! did not close properly last time.").size(15.0).color(WARN));
+                crate::widgets::icon_inline(ui, Icon::Warn, WARN());
+                ui.label(egui::RichText::new("Jank! did not close properly last time.").size(15.0).color(WARN()));
             });
             let what = s.original.as_ref().map(|p| format!("\"{}\"", p.display())).unwrap_or_else(|| "an unsaved project".to_string());
             dim(ui, &format!("A snapshot of {what} was saved {}. You can restore it now.", recovery::age_text(s.unix_time, recovery::unix_now())));
@@ -362,7 +407,7 @@ impl App {
                     }
                     result = None;
                 }
-                if Btn::new("Discard").accent(DANGER).tip("Delete the snapshot permanently").show(ui).clicked() {
+                if Btn::new("Discard").accent(DANGER()).tip("Delete the snapshot permanently").show(ui).clicked() {
                     if let Some(dir) = recovery::recovery_dir() {
                         recovery::clear(&dir);
                     }
@@ -421,16 +466,16 @@ impl App {
                     }
                     let sel = st.selected == i;
                     if sel {
-                        ui.painter().rect_filled(rect, compat::cr(7.0), BG3);
+                        ui.painter().rect_filled(rect, compat::cr(7.0), BG3());
                         ui.painter().rect_filled(egui::Rect::from_min_size(rect.min + vec2(0.0, 6.0), vec2(3.0, rect.height() - 12.0)), compat::cr(2.0), accent());
                         if up || down {
                             ui.scroll_to_rect(rect, None);
                         }
                     }
-                    compat::text(ui.painter(), rect.min + vec2(14.0, 14.0), Align2::LEFT_CENTER, info.title, 15.0, if sel { TEXT } else { mix(TEXT, DIM, 0.25) });
-                    compat::text(ui.painter(), rect.min + vec2(14.0, 31.0), Align2::LEFT_CENTER, info.description, 11.5, DIM);
+                    compat::text(ui.painter(), rect.min + vec2(14.0, 14.0), Align2::LEFT_CENTER, info.title, 15.0, if sel { TEXT() } else { mix(TEXT(), DIM(), 0.25) });
+                    compat::text(ui.painter(), rect.min + vec2(14.0, 31.0), Align2::LEFT_CENTER, info.description, 11.5, DIM());
                     let label = km.label(h.id);
-                    compat::text(ui.painter(), rect.right_center() + vec2(-12.0, -9.0), Align2::RIGHT_CENTER, info.category.title(), 11.5, DIM);
+                    compat::text(ui.painter(), rect.right_center() + vec2(-12.0, -9.0), Align2::RIGHT_CENTER, info.category.title(), 11.5, DIM());
                     if !label.is_empty() {
                         compat::text(ui.painter(), rect.right_center() + vec2(-12.0, 9.0), Align2::RIGHT_CENTER, &label, 12.5, accent());
                     }
@@ -494,7 +539,7 @@ impl App {
                 // Obsidian-style navigation column
                 ui.allocate_ui_with_layout(vec2(168.0, 470.0), egui::Layout::top_down(egui::Align::Min), |ui| {
                     ui.spacing_mut().item_spacing.y = 1.0;
-                    ui.label(egui::RichText::new("OPTIONS").size(10.5).color(DIM).family(egui::FontFamily::Name("strong".into())));
+                    ui.label(egui::RichText::new("OPTIONS").size(10.5).color(DIM()).family(egui::FontFamily::Name("strong".into())));
                     ui.add_space(2.0);
                     for (t, icon, name, tip) in [
                         (SettingsTab::Appearance, Icon::Palette, "Appearance", "Accent colour, density, text size, toolbar and status bar"),
@@ -510,10 +555,10 @@ impl App {
                     }
                     // the build sits at the foot of the column (fixed offset: the window has a fixed size)
                     ui.add_space(470.0 - 24.0 - 6.0 * 29.0 - 22.0);
-                    ui.label(egui::RichText::new(format!("Jank! {}", crate::appinfo::version_string())).size(11.0).color(alpha(DIM, 170)));
+                    ui.label(egui::RichText::new(format!("Jank! {}", crate::appinfo::version_string())).size(11.0).color(alpha(DIM(), 170)));
                 });
                 let (r, _) = ui.allocate_exact_size(vec2(1.0, 470.0), egui::Sense::hover());
-                ui.painter().rect_filled(r, compat::cr(0.0), LINE_SOFT);
+                ui.painter().rect_filled(r, compat::cr(0.0), LINE_SOFT());
                 ui.vertical(|ui| {
                     egui::ScrollArea::vertical().id_salt("settings-body").max_height(430.0).auto_shrink([false, false]).show(ui, |ui| match st.tab {
                         SettingsTab::Appearance => self.settings_appearance(ui),
@@ -555,6 +600,7 @@ impl App {
 
     fn settings_appearance(&mut self, ui: &mut egui::Ui) {
         use psxcore::settings::{Accent, Choice};
+        self.themes_section(ui);
         section(ui, "Accent colour", accent(), |ui| {
             dim(ui, "The one colour that marks the active mode, tool, tab and selection.");
             ui.horizontal(|ui| {
@@ -565,7 +611,7 @@ impl App {
                     let on = self.settings.accent == *a;
                     p.rect_filled(rect.shrink(4.0), compat::cr(RADIUS + 1.0), Color32::from_rgb(r, g, b));
                     if on || resp.hovered() {
-                        compat::stroke_rect(p, rect.shrink(1.0), RADIUS + 3.0, compat::stroke(if on { 2.0 } else { 1.0 }, if on { Color32::WHITE } else { DIM }));
+                        compat::stroke_rect(p, rect.shrink(1.0), RADIUS + 3.0, compat::stroke(if on { 2.0 } else { 1.0 }, if on { BRIGHT() } else { DIM() }));
                     }
                     if crate::widgets::with_tip(resp, a.label()).clicked() {
                         self.settings.accent = *a;
@@ -664,7 +710,7 @@ impl App {
                 self.touch_settings();
             }
         });
-        section(ui, "Panel layout", WARN, |ui| {
+        section(ui, "Panel layout", WARN(), |ui| {
             dim(ui, "Panel sizes are remembered between sessions. Drag a panel edge to resize it.");
             if Btn::new("Reset panel layout").tip("Return every panel to its original size").show(ui).clicked() {
                 self.settings.layout = settings::PanelLayout::default();
@@ -676,6 +722,13 @@ impl App {
 
     fn settings_viewport(&mut self, ui: &mut egui::Ui) {
         use psxcore::settings::{Corner, ViewportQuality, PREVIEW_WIDTH_MAX, PREVIEW_WIDTH_MIN};
+        section(ui, "Highlight", accent(), |ui| {
+            let mut v = self.settings.hover_highlight;
+            if toggle_tip(ui, &mut v, "Outline the object under the mouse", accent(), "Shows which object a click will select").changed() {
+                self.settings.hover_highlight = v;
+                self.touch_settings();
+            }
+        });
         section(ui, "Viewport sharpness", accent(), |ui| {
             dim(ui, "How sharp the 3D view is drawn compared with its size on screen. Auto lowers sharpness only while the frame rate would drop, and raises it back when there is time to spare. The final render is never affected.");
             ui.horizontal_wrapped(|ui| {
@@ -773,7 +826,7 @@ impl App {
                 None => dim(ui, "No configuration folder was found; settings last only for this session."),
             };
         });
-        section(ui, "Recent files", WARN, |ui| {
+        section(ui, "Recent files", WARN(), |ui| {
             dim(ui, &format!("{} remembered", self.settings.recent_files.len()));
             if Btn::new("Clear recent files").enabled(!self.settings.recent_files.is_empty()).tip("Forget the list of recently opened files").show(ui).clicked() {
                 self.settings.recent_files.clear();
@@ -784,9 +837,9 @@ impl App {
 
     fn settings_shortcuts(&mut self, ui: &mut egui::Ui, st: &mut SettingsState) {
         ui.horizontal(|ui| {
-            crate::widgets::icon_inline(ui, Icon::Search, DIM);
+            crate::widgets::icon_inline(ui, Icon::Search, DIM());
             ui.add(egui::TextEdit::singleline(&mut st.filter).hint_text("Filter commands").desired_width(260.0));
-            if Btn::new("Reset all").accent(DANGER).tip("Restore every shortcut to its default").show(ui).clicked() {
+            if Btn::new("Reset all").accent(DANGER()).tip("Restore every shortcut to its default").show(ui).clicked() {
                 self.settings.keymap.reset_all();
                 st.note = "All shortcuts restored".to_string();
                 self.touch_settings();
@@ -794,13 +847,12 @@ impl App {
         });
         let conflicts = self.settings.keymap.conflicts();
         if !conflicts.is_empty() {
-            ui.colored_label(DANGER, format!("{} shortcut(s) are used by more than one command.", conflicts.len()));
+            ui.colored_label(DANGER(), format!("{} shortcut(s) are used by more than one command.", conflicts.len()));
         }
         if !st.note.is_empty() {
             dim(ui, &st.note.clone());
         }
-        let cats = [Category::File, Category::Edit, Category::Mode, Category::Modeling, Category::Animation, Category::View, Category::Application];
-        for cat in cats {
+        for cat in Category::ALL {
             let rows: Vec<CommandId> = COMMANDS.iter().filter(|c| c.category == cat && (st.filter.trim().is_empty() || commands::fuzzy_score(&st.filter, c.title).is_some())).map(|c| c.id).collect();
             if rows.is_empty() {
                 continue;
@@ -821,7 +873,7 @@ impl App {
                         } else {
                             chords.iter().map(|c| c.to_string()).collect::<Vec<_>>().join("   or   ")
                         };
-                        let col = if capturing { WARN } else if chords.is_empty() { DIM } else { accent() };
+                        let col = if capturing { WARN() } else if chords.is_empty() { DIM() } else { accent() };
                         ui.allocate_ui(vec2(250.0, 28.0), |ui| {
                             ui.set_min_size(vec2(250.0, 28.0));
                             ui.label(egui::RichText::new(text).size(13.5).color(col));

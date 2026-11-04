@@ -150,7 +150,7 @@ impl App {
             ui.horizontal(|ui| {
                 let (sw, _) = ui.allocate_exact_size(vec2(26.0, 26.0), egui::Sense::hover());
                 ui.painter().rect_filled(sw, crate::compat::cr(2.0), c32(self.ed.brush.color));
-                crate::compat::stroke_rect(ui.painter(), sw, 2.0, crate::compat::stroke(1.0, LINE));
+                crate::compat::stroke_rect(ui.painter(), sw, 2.0, crate::compat::stroke(1.0, LINE()));
                 let r = ui.add(egui::TextEdit::singleline(&mut self.paint.hex).desired_width(78.0).font(egui::FontId::monospace(13.0)));
                 if r.changed() {
                     if let Some(h) = self.paint.hex.trim().strip_prefix('#').filter(|h| h.len() == 6) {
@@ -160,6 +160,20 @@ impl App {
                     }
                 }
                 crate::widgets::with_tip(r, "Type a colour like #aabbcc");
+            });
+            ui.horizontal(|ui| {
+                // second colour (Photoshop's background colour): gradients end in it, X swaps
+                let (sw, resp) = ui.allocate_exact_size(vec2(26.0, 18.0), egui::Sense::click());
+                ui.painter().rect_filled(sw, crate::compat::cr(2.0), c32(self.ed.brush.bg));
+                crate::compat::stroke_rect(ui.painter(), sw, 2.0, crate::compat::stroke(1.0, LINE()));
+                let tip = self.tip_for(psxcore::commands::CommandId::SwapColors, "Second colour: click to swap with the main colour");
+                if crate::widgets::with_tip(resp, &tip).clicked() {
+                    self.ed.brush.swap_colors();
+                }
+                dim(ui, "second colour");
+                if crate::widgets::Btn::new("").icon(crate::icons::Icon::Swap).size(vec2(26.0, 22.0)).tip(&tip).show(ui).clicked() {
+                    self.ed.brush.swap_colors();
+                }
             });
             let mut a = self.ed.brush.color[3] as f32 / 255.0 * 100.0;
             if slider_f(ui, "opacity", &mut a, 0.0..=100.0) {
@@ -261,7 +275,7 @@ impl App {
                     let at = self.paint.pal_idx;
                     self.save_palette(at);
                 }
-                if user && Btn::new("Delete").icon(Icon::Trash).accent(DANGER).tip("Deletes this palette").show(ui).clicked() {
+                if user && Btn::new("Delete").icon(Icon::Trash).accent(DANGER()).tip("Deletes this palette").show(ui).clicked() {
                     let p = self.paint.palettes.remove(idx);
                     if let Some(dir) = palette_dir() {
                         let _ = std::fs::remove_file(dir.join(file_name_of(&p.name)));
@@ -329,7 +343,7 @@ impl App {
                     let (x, y) = self.ed.selection_for_public(canvas).and_then(|s| s.bounds()).map_or((0, 0), |b| (b.0 as i32, b.1 as i32));
                     self.ed.selection_paste(canvas, x, y);
                 }
-                if Btn::new("Clear").icon(Icon::Trash).accent(DANGER).enabled(n > 0).tip("Make the selected pixels transparent (Delete)").show(ui).clicked() {
+                if Btn::new("Clear").icon(Icon::Trash).accent(DANGER()).enabled(n > 0).tip("Make the selected pixels transparent (Delete)").show(ui).clicked() {
                     self.ed.selection_delete(canvas);
                 }
             });
@@ -434,9 +448,9 @@ impl App {
                 match row {
                     None => {
                         let (rect, _) = ui.allocate_exact_size(vec2(ui.available_width(), 24.0), egui::Sense::hover());
-                        ui.painter().rect_filled(rect, crate::compat::cr(2.0), BG0);
-                        crate::icons::draw(ui.painter(), Icon::Cube, rect.min + vec2(16.0, 12.0), 15.0, DIM);
-                        crate::compat::text(ui.painter(), rect.min + vec2(32.0, 12.0), egui::Align2::LEFT_CENTER, "3D scene", 12.5, DIM);
+                        ui.painter().rect_filled(rect, crate::compat::cr(2.0), BG0());
+                        crate::icons::draw(ui.painter(), Icon::Cube, rect.min + vec2(16.0, 12.0), 15.0, DIM());
+                        crate::compat::text(ui.painter(), rect.min + vec2(32.0, 12.0), egui::Align2::LEFT_CENTER, "3D scene", 12.5, DIM());
                     }
                     Some(i) => {
                         let (name, vis, locked) = {
@@ -499,7 +513,7 @@ impl App {
                     if Btn::new("").icon(Icon::Copy).tip("Duplicate the layer").show(ui).clicked() {
                         self.ed.duplicate_scene_layer(active);
                     }
-                    if Btn::new("").icon(Icon::Trash).accent(DANGER).tip("Delete the layer").show(ui).clicked() {
+                    if Btn::new("").icon(Icon::Trash).accent(DANGER()).tip("Delete the layer").show(ui).clicked() {
                         self.ed.delete_scene_layer(active);
                     }
                 });
@@ -563,7 +577,7 @@ impl App {
                         s.duplicate(active);
                     });
                 }
-                if Btn::new("").icon(Icon::Trash).accent(DANGER).enabled(n > 1).tip("Delete the layer").show(ui).clicked() {
+                if Btn::new("").icon(Icon::Trash).accent(DANGER()).enabled(n > 1).tip("Delete the layer").show(ui).clicked() {
                     self.ed.edit_texture_stack(|s| {
                         s.remove(active);
                     });

@@ -63,8 +63,22 @@ pub struct Asset {
     pub emotions: Vec<Emotion>,
     /// Layer stacks of textures (texture index, stack). The texture itself always holds the flattened picture.
     pub layers: Vec<(usize, LayerStack)>,
+    /// Polygons of Edit mode (quads, n-gons, seams, selection), kept with a fingerprint of the
+    /// triangle meshes they were written to; used again while the meshes have not changed.
+    pub topology: Option<Box<(u64, crate::editmesh::EditMesh)>>,
+    /// Textures in indexed-colour mode: (texture index, indices and palette).
+    pub indexed: Vec<(usize, crate::palette::Indexed)>,
 }
 impl Asset {
+    pub fn new(model: Model) -> Asset {
+        Asset { model, emotions: vec![], layers: vec![], topology: None, indexed: vec![] }
+    }
+    pub fn indexed(&self, tex: usize) -> Option<&crate::palette::Indexed> {
+        self.indexed.iter().find(|(t, _)| *t == tex).map(|(_, s)| s)
+    }
+    pub fn indexed_mut(&mut self, tex: usize) -> Option<&mut crate::palette::Indexed> {
+        self.indexed.iter_mut().find(|(t, _)| *t == tex).map(|(_, s)| s)
+    }
     pub fn stack(&self, tex: usize) -> Option<&LayerStack> {
         self.layers.iter().find(|(t, _)| *t == tex).map(|(_, s)| s)
     }
@@ -85,7 +99,7 @@ impl Project {
         Self { name: name.into(), assets: vec![], scene: Scene::default(), animations: vec![] }
     }
     pub fn add_asset(&mut self, model: Model) -> usize {
-        self.assets.push(Asset { model, emotions: vec![], layers: vec![] });
+        self.assets.push(Asset::new(model));
         self.assets.len() - 1
     }
     pub fn bones_of(&self, asset: usize) -> usize {
@@ -468,7 +482,7 @@ fn r_assets(d: &[u8]) -> Res<Vec<Asset>> {
             let texture = r.u32()? as usize;
             emotions.push(Emotion { name, texture, image: r_texture(&mut r)? });
         }
-        out.push(Asset { model, emotions, layers: vec![] });
+        out.push(Asset { emotions, ..Asset::new(model) });
     }
     Ok(out)
 }
@@ -674,7 +688,7 @@ fn r_anims(d: &[u8]) -> Res<Vec<Animation>> {
                 }
                 states.push(ObjectState { object, transform, pose: Pose { bones }, visible, emotion, tex_patch });
             }
-            frames.push(AnimFrame { states, camera, style, hold, tween: fl & 1 != 0, hand_layer, hand_only: fl & 2 != 0, note });
+            frames.push(AnimFrame { states, camera, style, hold, tween: fl & 1 != 0, hand_layer, hand_only: fl & 2 != 0, note, ease: Default::default() });
         }
         out.push(Animation { name, fps_num, fps_den, frames });
     }
@@ -682,6 +696,261 @@ fn r_anims(d: &[u8]) -> Res<Vec<Animation>> {
 }
 
 // ------------------------------------------------------------------ container
+
+// ------------------------------------------------------------------ chunks added in 0.3
+
+fn w_editmesh(w: &mut W, m: &crate::editmesh::EditMesh) {
+    w.u32(m.verts.len() as u32);
+    for v in &m.verts {
+        w.v3(v.pos);
+        v.joints.iter().for_each(|j| w.u16(*j));
+        v.weights.iter().for_each(|x| w.f32(*x));
+    }
+    w.u32(m.parts.len() as u32);
+    for p in &m.parts {
+        w.str(&p.name);
+        w.u32(p.material as u32);
+    }
+    w.u32(m.faces.len() as u32);
+    for f in &m.faces {
+        w.u32(f.c.len() as u32);
+        w.u16(f.part);
+        w.bool(f.smooth);
+        for c in &f.c {
+            w.u32(c.v);
+            w.f32(c.uv.x);
+            w.f32(c.uv.y);
+            w.f3(c.color);
+        }
+    }
+    let edges = |w: &mut W, s: &std::collections::BTreeSet<(u32, u32)>| {
+        w.u32(s.len() as u32);
+        for e in s {
+            w.u32(e.0);
+            w.u32(e.1);
+        }
+    };
+    let ids = |w: &mut W, s: &std::collections::BTreeSet<u32>| {
+        w.u32(s.len() as u32);
+        s.iter().for_each(|x| w.u32(*x));
+    };
+    edges(w, &m.wires);
+    edges(w, &m.sharp);
+    edges(w, &m.seams);
+    ids(w, &m.hidden_v);
+    ids(w, &m.hidden_f);
+    w.u8(m.mode as u8);
+    ids(w, &m.sel_v);
+    edges(w, &m.sel_e);
+    ids(w, &m.sel_f);
+    w.opt_u32(m.active.map(|x| x as usize));
+}
+fn r_editmesh(r: &mut R) -> Res<crate::editmesh::EditMesh> {
+    use crate::editmesh::*;
+    let mut m = EditMesh::default();
+    for _ in 0..r.count(44)? {
+        let pos = r.v3()?;
+        let joints = [r.u16()?, r.u16()?, r.u16()?, r.u16()?];
+        let weights = [r.f32()?, r.f32()?, r.f32()?, r.f32()?];
+        m.verts.push(EVert { pos, joints, weights });
+    }
+    for _ in 0..r.count(8)? {
+        let name = r.str()?;
+        m.parts.push(Part { name, material: r.u32()? as usize });
+    }
+    let nv = m.verts.len() as u32;
+    let bad = || JankError::Corrupt("edit mesh refers to a missing vertex".into());
+    for _ in 0..r.count(7)? {
+        let n = r.count(24)?;
+        let part = r.u16()?;
+        let smooth = r.bool()?;
+        let mut c = Vec::with_capacity(n);
+        for _ in 0..n {
+            let v = r.u32()?;
+            if v >= nv {
+                return Err(bad());
+            }
+            let uv = crate::math::Vec2::new(r.f32()?, r.f32()?);
+            c.push(Corner { v, uv, color: r.f3()? });
+        }
+        m.faces.push(EFace { c, part, smooth });
+    }
+    let edges = |r: &mut R| -> Res<std::collections::BTreeSet<(u32, u32)>> {
+        let mut s = std::collections::BTreeSet::new();
+        for _ in 0..r.count(8)? {
+            let e = (r.u32()?, r.u32()?);
+            if e.0 >= nv || e.1 >= nv {
+                return Err(bad());
+            }
+            s.insert(e);
+        }
+        Ok(s)
+    };
+    let ids = |r: &mut R| -> Res<std::collections::BTreeSet<u32>> {
+        let mut s = std::collections::BTreeSet::new();
+        for _ in 0..r.count(4)? {
+            s.insert(r.u32()?);
+        }
+        Ok(s)
+    };
+    m.wires = edges(r)?;
+    m.sharp = edges(r)?;
+    m.seams = edges(r)?;
+    m.hidden_v = ids(r)?;
+    m.hidden_f = ids(r)?;
+    m.mode = match r.u8()? {
+        1 => SelectMode::Edge,
+        2 => SelectMode::Face,
+        _ => SelectMode::Vertex,
+    };
+    m.sel_v = ids(r)?;
+    m.sel_e = edges(r)?;
+    m.sel_f = ids(r)?;
+    m.active = r.opt_u32()?.map(|x| x as u32).filter(|&x| x < nv);
+    if m.parts.is_empty() || m.faces.iter().any(|f| f.part as usize >= m.parts.len() || f.c.len() < 3) {
+        return Err(JankError::Corrupt("edit mesh parts".into()));
+    }
+    m.sel_f.retain(|&f| (f as usize) < m.faces.len());
+    m.hidden_f.retain(|&f| (f as usize) < m.faces.len());
+    m.sel_v.retain(|&v| v < nv);
+    m.hidden_v.retain(|&v| v < nv);
+    Ok(m)
+}
+/// Edit-mode polygons of the models (only for models that were edited in Edit mode).
+fn w_edit(p: &Project) -> Option<Vec<u8>> {
+    let list: Vec<(usize, &(u64, crate::editmesh::EditMesh))> = p.assets.iter().enumerate().filter_map(|(i, a)| a.topology.as_deref().map(|t| (i, t))).collect();
+    if list.is_empty() {
+        return None;
+    }
+    let mut w = W::default();
+    w.u32(list.len() as u32);
+    for (i, (fp, m)) in list {
+        w.u32(i as u32);
+        w.u32(*fp as u32);
+        w.u32((*fp >> 32) as u32);
+        w_editmesh(&mut w, m);
+    }
+    Some(w.b)
+}
+fn r_edit(d: &[u8], p: &mut Project) -> Res<()> {
+    let mut r = R::new(d);
+    for _ in 0..r.count(16)? {
+        let i = r.u32()? as usize;
+        let fp = r.u32()? as u64 | (r.u32()? as u64) << 32;
+        let m = r_editmesh(&mut r)?;
+        if let Some(a) = p.assets.get_mut(i) {
+            a.topology = Some(Box::new((fp, m)));
+        }
+    }
+    Ok(())
+}
+/// Reference pictures of the scene.
+fn w_refs(s: &Scene) -> Option<Vec<u8>> {
+    if s.refs.is_empty() {
+        return None;
+    }
+    let mut w = W::default();
+    w.u32(s.refs.len() as u32);
+    for r in &s.refs {
+        w.str(&r.name);
+        w_transform(&mut w, &r.transform);
+        w.f32(r.size);
+        w.f32(r.opacity);
+        w.u8(r.visible as u8 | (r.locked as u8) << 1 | (r.on_top as u8) << 2);
+        w_texture(&mut w, &r.image);
+    }
+    Some(w.b)
+}
+fn r_refs(d: &[u8]) -> Res<Vec<crate::scene::RefImage>> {
+    let mut r = R::new(d);
+    let mut out = vec![];
+    for _ in 0..r.count(20)? {
+        let name = r.str()?;
+        let transform = r_transform(&mut r)?;
+        let size = r.f32()?;
+        let opacity = r.f32()?;
+        let fl = r.u8()?;
+        let image = std::sync::Arc::new(r_texture(&mut r)?);
+        out.push(crate::scene::RefImage { name, image, transform, size, opacity: opacity.clamp(0.0, 1.0), visible: fl & 1 != 0, locked: fl & 2 != 0, on_top: fl & 4 != 0 });
+    }
+    Ok(out)
+}
+/// Easing of tweens (only frames whose easing is not linear).
+fn w_ease(p: &Project) -> Option<Vec<u8>> {
+    let mut list = vec![];
+    for (ai, a) in p.animations.iter().enumerate() {
+        for (fi, f) in a.frames.iter().enumerate() {
+            if !f.ease.is_linear() {
+                list.push((ai, fi, f.ease));
+            }
+        }
+    }
+    if list.is_empty() {
+        return None;
+    }
+    let mut w = W::default();
+    w.u32(list.len() as u32);
+    for (a, f, e) in list {
+        w.u32(a as u32);
+        w.u32(f as u32);
+        [e.x1, e.y1, e.x2, e.y2].iter().for_each(|x| w.f32(*x));
+    }
+    Some(w.b)
+}
+fn r_ease(d: &[u8], p: &mut Project) -> Res<()> {
+    let mut r = R::new(d);
+    for _ in 0..r.count(24)? {
+        let (a, f) = (r.u32()? as usize, r.u32()? as usize);
+        let e = crate::anim::Ease { x1: r.f32()?, y1: r.f32()?, x2: r.f32()?, y2: r.f32()? }.clamped();
+        if let Some(fr) = p.animations.get_mut(a).and_then(|a| a.frames.get_mut(f)) {
+            fr.ease = e;
+        }
+    }
+    Ok(())
+}
+/// Indexed-colour textures.
+fn w_indexed(p: &Project) -> Option<Vec<u8>> {
+    let n: usize = p.assets.iter().map(|a| a.indexed.len()).sum();
+    if n == 0 {
+        return None;
+    }
+    let mut w = W::default();
+    w.u32(n as u32);
+    for (ai, a) in p.assets.iter().enumerate() {
+        for (t, ix) in &a.indexed {
+            w.u32(ai as u32);
+            w.u32(*t as u32);
+            w.str(&ix.palette.name);
+            w.u32(ix.palette.colors.len() as u32);
+            for c in &ix.palette.colors {
+                w.b.extend(c);
+            }
+            w.u32(ix.idx.len() as u32);
+            w.b.extend(&ix.idx);
+        }
+    }
+    Some(w.b)
+}
+fn r_indexed(d: &[u8], p: &mut Project) -> Res<()> {
+    let mut r = R::new(d);
+    for _ in 0..r.count(16)? {
+        let (ai, t) = (r.u32()? as usize, r.u32()? as usize);
+        let name = r.str()?;
+        let mut colors = vec![];
+        for _ in 0..r.count(4)? {
+            let b = r.take(4)?;
+            colors.push([b[0], b[1], b[2], b[3]]);
+        }
+        let n = r.count(1)?;
+        let idx = r.take(n)?.to_vec();
+        if let Some(a) = p.assets.get_mut(ai) {
+            if a.model.textures.get(t).is_some_and(|tex| tex.px.len() == idx.len()) && !colors.is_empty() {
+                a.indexed.push((t, crate::palette::Indexed { palette: crate::palette::Palette { name, colors }, idx }));
+            }
+        }
+    }
+    Ok(())
+}
 
 fn put_chunk(out: &mut Vec<u8>, tag: &[u8; 4], raw: &[u8]) {
     let packed = deflate(raw);
@@ -712,6 +981,18 @@ impl Project {
         if let Some(l) = w_lighting(&self.scene.lighting) {
             put_chunk(&mut out, b"LITE", &l);
         }
+        if let Some(d) = w_edit(self) {
+            put_chunk(&mut out, b"EDIT", &d);
+        }
+        if let Some(d) = w_refs(&self.scene) {
+            put_chunk(&mut out, b"REFS", &d);
+        }
+        if let Some(d) = w_ease(self) {
+            put_chunk(&mut out, b"EASE", &d);
+        }
+        if let Some(d) = w_indexed(self) {
+            put_chunk(&mut out, b"IDXP", &d);
+        }
         put_chunk(&mut out, b"END\0", &[]);
         out
     }
@@ -728,6 +1009,7 @@ impl Project {
         let (mut name, mut assets, mut scene, mut anims) = (None, None, None, None);
         let mut layer_data: Option<Vec<u8>> = None;
         let mut lite: Option<crate::lighting::Lighting> = None;
+        let mut extra: Vec<([u8; 4], Vec<u8>)> = vec![];
         loop {
             let tag: [u8; 4] = r.take(4)?.try_into().unwrap();
             let comp = r.u8()?;
@@ -760,6 +1042,7 @@ impl Project {
                 b"ANIM" => anims = Some(r_anims(&data)?),
                 b"LAYR" => layer_data = Some(data),
                 b"LITE" => lite = Some(r_lighting(&data)?),
+                b"EDIT" | b"REFS" | b"EASE" | b"IDXP" => extra.push((tag, data)),
                 _ => {} // a chunk from a newer version that this build does not know: skip it
             }
         }
@@ -774,6 +1057,14 @@ impl Project {
         }
         if let Some(l) = lite {
             p.scene.lighting = l;
+        }
+        for (tag, d) in extra {
+            match &tag {
+                b"EDIT" => r_edit(&d, &mut p)?,
+                b"REFS" => p.scene.refs = r_refs(&d)?,
+                b"EASE" => r_ease(&d, &mut p)?,
+                _ => r_indexed(&d, &mut p)?,
+            }
         }
         p.validate()?;
         Ok(p)

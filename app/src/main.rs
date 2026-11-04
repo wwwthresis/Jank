@@ -5,6 +5,8 @@ mod commands_ui;
 mod crash;
 mod compat;
 mod dialogs;
+mod editui;
+mod extras_ui;
 mod gizmo_ui;
 mod icons;
 mod paintui;
@@ -74,7 +76,7 @@ pub struct App {
     pub rend: Renderer,
     /// GPU handle used for the viewport textures (see `compat::GlSurface`).
     pub gl: Option<std::sync::Arc<eframe::glow::Context>>,
-    pub surf: [compat::GlSurface; 4],
+    pub surf: [compat::GlSurface; 5],
     pub perf: perf::Perf,
     /// True while the mouse is over the timeline (Delete then removes the current frame).
     pub hover_timeline: bool,
@@ -100,12 +102,32 @@ pub struct App {
     pub last_title: String,
     pub allow_close: bool,
     pub recent: Vec<[u8; 4]>,
+    /// Edit mode (mesh editing) state of the viewport.
+    pub edui: editui::EditUi,
+    /// The open radial menu (Space).
+    pub radial: Option<extras_ui::Radial>,
+    pub graph: extras_ui::GraphState,
+    /// Built-in themes and the user's theme files.
+    pub themes: Vec<psxcore::themes::Theme>,
+    /// The object that cuts the selected one in a boolean.
+    pub bool_cutter: Option<u32>,
+    pub bool_delete: bool,
+    /// Chain length used when IK is switched on.
+    pub ik_len: usize,
+    /// Palette entry of an indexed texture whose colour is being changed.
+    pub idx_edit: Option<(usize, [u8; 3])>,
+    /// Width of the viewport widget in points (for pick radii).
+    pub vp_width: f32,
+    /// Tab presses taken away from egui's focus navigation (Tab toggles Edit mode).
+    pub tab_chords: Vec<psxcore::keymap::Chord>,
 }
 
 pub const SURF_VIEW: usize = 0;
 pub const SURF_PREVIEW: usize = 1;
 pub const SURF_GHOST_PREV: usize = 2;
 pub const SURF_GHOST_NEXT: usize = 3;
+/// Hover outline and Edit-mode face tint.
+pub const SURF_OVERLAY: usize = 4;
 
 pub fn mode_accent(m: Mode) -> Color32 {
     match m {
@@ -181,7 +203,19 @@ impl App {
             last_title: String::new(),
             allow_close: false,
             recent: vec![],
+            edui: Default::default(),
+            radial: None,
+            graph: extras_ui::GraphState { only_selected: true, ..Default::default() },
+            themes: psxcore::themes::builtin(),
+            bool_cutter: None,
+            bool_delete: false,
+            ik_len: 2,
+            idx_edit: None,
+            vp_width: 1.0,
+            tab_chords: vec![],
         };
+        let settings_existed = psxcore::settings::settings_path().is_some_and(|p| p.exists());
+        app.reload_themes();
         app.report_settings_problems(problems);
         if l.crash_reports > 0 {
             if let Some(d) = crash::crash_dir() {
@@ -200,6 +234,7 @@ impl App {
         if let Some(s) = l.snapshot {
             app.dialog = Some(Dialog::Recover(s));
         }
+        app.whats_new_at_start(settings_existed);
         app
     }
 
@@ -289,6 +324,26 @@ impl eframe::App for App {
         self.shutdown();
     }
 
+    /// Tab belongs to the editor (Edit mode) unless a text field has the keyboard: egui would
+    /// otherwise use it to move the keyboard focus between widgets.
+    fn raw_input_hook(&mut self, ctx: &Context, raw: &mut egui::RawInput) {
+        if ctx.wants_keyboard_input() || self.dialog.is_some() {
+            return;
+        }
+        let chords = &mut self.tab_chords;
+        raw.events.retain(|e| match e {
+            egui::Event::Key { key: egui::Key::Tab, pressed, modifiers, .. } => {
+                if *pressed {
+                    if let Some(c) = psxcore::keymap::Chord::new(modifiers.ctrl || modifiers.command, modifiers.shift, modifiers.alt, "Tab") {
+                        chords.push(c);
+                    }
+                }
+                false
+            }
+            _ => true,
+        });
+    }
+
     fn update(&mut self, ctx: &Context, frame: &mut eframe::Frame) {
         if self.gl.is_none() {
             self.gl = frame.gl().cloned();
@@ -323,9 +378,10 @@ impl eframe::App for App {
             self.texture_panel(ctx);
         }
         self.tool_strip(ctx);
-        egui::CentralPanel::default().frame(compat::frame(BG0, 0.0)).show(ctx, |ui| self.viewport_ui(ui));
+        egui::CentralPanel::default().frame(compat::frame(BG0(), 0.0)).show(ctx, |ui| self.viewport_ui(ui));
 
         self.dialogs(ctx);
+        self.radial_ui(ctx);
         self.run_pending(ctx);
         self.toasts_ui(ctx, dt);
         self.sync_look(ctx);
@@ -388,6 +444,11 @@ impl eframe::App for Shell {
             eframe::App::on_exit(a, gl);
         }
     }
+    fn raw_input_hook(&mut self, ctx: &Context, raw: &mut egui::RawInput) {
+        if let Some(a) = self.app.as_mut() {
+            eframe::App::raw_input_hook(a, ctx, raw);
+        }
+    }
 
     fn update(&mut self, ctx: &Context, frame: &mut eframe::Frame) {
         if self.app.is_none() {
@@ -395,8 +456,8 @@ impl eframe::App for Shell {
             let leave = match self.splash.as_mut() {
                 Some(sp) => matches!(sp.ui(ctx, &mut self.boot, !loading), splash::State::Done),
                 None => {
-                    egui::CentralPanel::default().frame(compat::frame(BG0, 0.0)).show(ctx, |ui| {
-                        ui.centered_and_justified(|ui| ui.label(egui::RichText::new(self.boot.label).color(DIM)));
+                    egui::CentralPanel::default().frame(compat::frame(BG0(), 0.0)).show(ctx, |ui| {
+                        ui.centered_and_justified(|ui| ui.label(egui::RichText::new(self.boot.label).color(DIM())));
                     });
                     !loading
                 }

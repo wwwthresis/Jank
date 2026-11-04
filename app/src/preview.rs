@@ -110,15 +110,15 @@ impl App {
             ui.set_clip_rect(rect.expand(2.0));
             let (_, _) = ui.allocate_exact_size(total, Sense::hover());
             let p = ui.painter();
-            p.rect_filled(rect, compat::cr(0.0), BG1);
-            p.rect_filled(header, compat::cr(0.0), BG2);
+            p.rect_filled(rect, compat::cr(0.0), BG1());
+            p.rect_filled(header, compat::cr(0.0), BG2());
             if let Some(id) = self.surf[SURF_PREVIEW].id() {
                 p.image(id, body, Rect::from_min_max(pos2(0.0, 0.0), pos2(1.0, 1.0)), Color32::WHITE);
             } else {
-                p.rect_filled(body, compat::cr(0.0), BG0);
+                p.rect_filled(body, compat::cr(0.0), BG0());
             }
-            compat::stroke_rect(p, rect, 0.0, compat::stroke(1.0, LINE));
-            compat::text(p, header.min + vec2(8.0, HEADER * 0.5), Align2::LEFT_CENTER, &format!("Render  {rw}x{rh}"), 11.5, TEXT);
+            compat::stroke_rect(p, rect, 0.0, compat::stroke(1.0, LINE()));
+            compat::text(p, header.min + vec2(8.0, HEADER * 0.5), Align2::LEFT_CENTER, &format!("Render  {rw}x{rh}"), 11.5, TEXT());
 
             // header buttons: smaller, larger, hide
             let mut bx = header.max.x - 4.0;
@@ -127,9 +127,9 @@ impl App {
                 bx -= 20.0;
                 let resp = ui.interact(r, Id::new(("pv_btn", act)), Sense::click()).on_hover_text(tip);
                 if resp.hovered() {
-                    ui.painter().rect_filled(r, compat::cr(2.0), BG3);
+                    ui.painter().rect_filled(r, compat::cr(2.0), BG3());
                 }
-                compat::text(ui.painter(), r.center(), Align2::CENTER_CENTER, label, 13.0, if resp.hovered() { TEXT } else { DIM });
+                compat::text(ui.painter(), r.center(), Align2::CENTER_CENTER, label, 13.0, if resp.hovered() { TEXT() } else { DIM() });
                 if resp.clicked() {
                     match act {
                         0 => visible = false,

@@ -9,7 +9,7 @@ Where Jank! stands and what remains before a full 1.0 release. Status: **done**,
 | 1 | Measure frame rate on real GPUs and weak machines | to do |
 | 2 | Click-through check of selection tools and palette saving in the GUI | to do |
 | 3 | Save and reopen scene layers through the file dialog (by hand) | to do |
-| 4 | Smoother strokes when painting in the 3D viewport | to do |
+| 4 | Smoother strokes when painting in the 3D viewport | done (stroke stabilizer) |
 | 5 | More options in Settings (appearance, viewport shadows, navigation, canvas) | done |
 | 6 | Packaging: AppImage, `.deb`, Flatpak | to do |
 | 7 | Release pipeline: build number stamping, checksums, signing | to do |
@@ -36,7 +36,10 @@ Where Jank! stands and what remains before a full 1.0 release. Status: **done**,
 - Level editor: grid snapping, prefabs, sector/portal culling preview.
 - Plugin interface for tools and importers.
 - Scripted batch export (command line).
-- Bone-based animation curves and glTF animation export.
+- glTF animation export (bone curves are in the graph editor now).
+- Edge slide for any edge (now only right after a loop cut), vertex slide, spin and screw tools.
+- Booleans on open meshes (now the cutter and the target should be closed).
+- Theme editor inside the program (themes are edited as text files now).
 - Windows and macOS builds.
 - Sound-less turntable and sprite-sheet exporters.
 

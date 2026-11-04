@@ -3,7 +3,7 @@
 //!
 //! Key names are independent of any GUI library. The GUI maps its own key type to these names.
 
-use crate::commands::{CommandId, COMMANDS};
+use crate::commands::{CommandId, Context, COMMANDS};
 use std::collections::BTreeMap;
 use std::fmt;
 
@@ -149,23 +149,37 @@ impl Keymap {
         self.bindings.iter().filter(|(_, v)| v.contains(chord)).map(|(k, _)| *k).collect()
     }
 
-    /// Chords that trigger more than one command, with the commands involved.
+    /// The commands a chord runs when the given contexts are active (`Global` is always active).
+    /// Commands of an active context shadow global commands with the same key, the way Blender's
+    /// Edit-mode keys replace the object-mode ones.
+    pub fn commands_in(&self, chord: &Chord, active: &[Context]) -> Vec<CommandId> {
+        let all = self.commands_for(chord);
+        let ctx_of = |id: &CommandId| id.info().category.context();
+        let special: Vec<CommandId> = all.iter().copied().filter(|id| ctx_of(id) != Context::Global && active.contains(&ctx_of(id))).collect();
+        if !special.is_empty() {
+            return special;
+        }
+        all.into_iter().filter(|id| ctx_of(id) == Context::Global).collect()
+    }
+
+    /// Chords that trigger more than one command in the same context, with the commands involved.
     pub fn conflicts(&self) -> Vec<(Chord, Vec<CommandId>)> {
-        let mut by_chord: BTreeMap<&Chord, Vec<CommandId>> = BTreeMap::new();
+        let mut by_chord: BTreeMap<(&Chord, Context), Vec<CommandId>> = BTreeMap::new();
         for (id, chords) in &self.bindings {
             for c in chords {
-                by_chord.entry(c).or_default().push(*id);
+                by_chord.entry((c, id.info().category.context())).or_default().push(*id);
             }
         }
-        by_chord.into_iter().filter(|(_, v)| v.len() > 1).map(|(c, v)| (c.clone(), v)).collect()
+        by_chord.into_iter().filter(|(_, v)| v.len() > 1).map(|((c, _), v)| (c.clone(), v)).collect()
     }
 
     /// Binds `chord` to `id` as its only shortcut and removes the chord from every other command,
     /// returning the commands that lost it so the GUI can tell the user.
     pub fn assign_exclusive(&mut self, id: CommandId, chord: Chord) -> Vec<CommandId> {
         let mut stolen = vec![];
+        let ctx = id.info().category.context();
         for (other, chords) in self.bindings.iter_mut() {
-            if *other != id && chords.contains(&chord) {
+            if *other != id && other.info().category.context() == ctx && chords.contains(&chord) {
                 chords.retain(|c| c != &chord);
                 stolen.push(*other);
             }
@@ -290,6 +304,26 @@ mod tests {
         assert_eq!(p.len(), 3, "{p:?}");
         assert_eq!(k.label(CommandId::MirrorX), "Alt+X");
         assert_eq!(k.label(CommandId::NewProject), "Ctrl+N", "a bad line leaves the old binding alone");
+    }
+
+    #[test]
+    fn context_keys_shadow_global_ones_only_where_active() {
+        let k = Keymap::default();
+        let g = Chord::parse("G").unwrap();
+        assert_eq!(k.commands_in(&g, &[Context::MeshEdit]), vec![CommandId::MeshGrab]);
+        assert_eq!(k.commands_in(&g, &[Context::Paint]), vec![CommandId::ToolGradient]);
+        assert!(k.commands_in(&g, &[]).is_empty());
+        let one = Chord::parse("1").unwrap();
+        assert_eq!(k.commands_in(&one, &[]), vec![CommandId::ModeModel]);
+        assert_eq!(k.commands_in(&one, &[Context::MeshEdit]), vec![CommandId::MeshSelectVertex]);
+        // Undo is not shadowed in Edit mode
+        let z = Chord::parse("Ctrl+Z").unwrap();
+        assert_eq!(k.commands_in(&z, &[Context::MeshEdit]), vec![CommandId::Undo]);
+        // stealing a key only happens inside one context
+        let mut k2 = Keymap::default();
+        let stolen = k2.assign_exclusive(CommandId::MeshKnife, Chord::parse("1").unwrap());
+        assert_eq!(stolen, vec![CommandId::MeshSelectVertex]);
+        assert_eq!(k2.label(CommandId::ModeModel), "1");
     }
 
     #[test]
