@@ -14,7 +14,7 @@ Where Jank! stands and what remains before a full 1.0 release. Status: **done**,
 | 6 | More options in Settings (viewport, shadows defaults) | to do |
 | 7 | Packaging: AppImage, `.deb`, Flatpak | to do |
 | 8 | Release pipeline: build number stamping, checksums, signing | to do |
-| 9 | Final licence and EULA | to do |
+| 9 | Final licence and EULA (source-available draft is in `LICENSE`; needs the owner's name, jurisdiction and a lawyer's review) | in progress |
 | 10 | Update to the newest `eframe`/`egui` and the newest stable Rust | to do |
 | 11 | Automated GUI tests in CI | to do |
 | 12 | Crash reports the user can send | to do |

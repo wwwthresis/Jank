@@ -25,6 +25,7 @@ pub fn bytes(file: &str) -> Option<&'static [u8]> {
         "christmas_1224-1225.jpg" => include_bytes!("../assets/splash/christmas_1224-1225.jpg"),
         "newyear_1231-0101.jpg" => include_bytes!("../assets/splash/newyear_1231-0101.jpg"),
         "valentine_0213-0214.jpg" => include_bytes!("../assets/splash/valentine_0213-0214.jpg"),
+        "winter_1201-0229.jpg" => include_bytes!("../assets/splash/winter_1201-0229.jpg"),
         _ => return None,
     })
 }

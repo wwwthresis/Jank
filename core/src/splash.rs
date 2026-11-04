@@ -18,6 +18,8 @@ pub enum Season {
     Christmas,
     NewYear,
     Valentine,
+    /// All winter (Dec 1 - end of Feb) except the holidays above, which take priority.
+    Winter,
 }
 
 /// One holiday rule: the splash image and the inclusive date ranges when it is shown.
@@ -39,10 +41,12 @@ pub const RULES: &[Rule] = &[
     Rule { season: Season::Christmas, id: "christmas", files: &["christmas_1224-1225.jpg"], ranges: &[((12, 24), (12, 25)), ((1, 6), (1, 7))] },
     Rule { season: Season::NewYear, id: "newyear", files: &["newyear_1231-0101.jpg"], ranges: &[((12, 31), (1, 1))] },
     Rule { season: Season::Valentine, id: "valentine", files: &["valentine_0213-0214.jpg"], ranges: &[((2, 13), (2, 14))] },
+    // Must stay last: `season_for` takes the first matching rule, so every holiday above wins over the winter picture.
+    Rule { season: Season::Winter, id: "winter", files: &["winter_1201-0229.jpg"], ranges: &[((12, 1), (2, 29))] },
 ];
 
 impl Season {
-    pub const ALL: [Season; 5] = [Season::Default, Season::Halloween, Season::Christmas, Season::NewYear, Season::Valentine];
+    pub const ALL: [Season; 6] = [Season::Default, Season::Halloween, Season::Christmas, Season::NewYear, Season::Valentine, Season::Winter];
 
     pub fn rule(self) -> &'static Rule {
         RULES.iter().find(|r| r.season == self).expect("every season has a rule")
@@ -104,23 +108,36 @@ mod tests {
     }
     #[test]
     fn christmas_western_and_eastern() {
-        for (m, d, s) in [(12, 23, Season::Default), (12, 24, Season::Christmas), (12, 25, Season::Christmas), (12, 26, Season::Default), (1, 5, Season::Default), (1, 6, Season::Christmas), (1, 7, Season::Christmas), (1, 8, Season::Default)] {
+        for (m, d, s) in [(12, 23, Season::Winter), (12, 24, Season::Christmas), (12, 25, Season::Christmas), (12, 26, Season::Winter), (1, 5, Season::Winter), (1, 6, Season::Christmas), (1, 7, Season::Christmas), (1, 8, Season::Winter)] {
             assert_eq!(season_for(m, d), s, "{m}-{d}");
         }
     }
     #[test]
     fn new_year_wraps_over_the_year_boundary() {
-        assert_eq!(season_for(12, 30), Season::Default);
+        assert_eq!(season_for(12, 30), Season::Winter);
         assert_eq!(season_for(12, 31), Season::NewYear);
         assert_eq!(season_for(1, 1), Season::NewYear);
-        assert_eq!(season_for(1, 2), Season::Default);
+        assert_eq!(season_for(1, 2), Season::Winter);
     }
     #[test]
     fn valentine_is_the_day_before_and_the_day() {
-        assert_eq!(season_for(2, 12), Season::Default);
+        assert_eq!(season_for(2, 12), Season::Winter);
         assert_eq!(season_for(2, 13), Season::Valentine);
         assert_eq!(season_for(2, 14), Season::Valentine);
-        assert_eq!(season_for(2, 15), Season::Default);
+        assert_eq!(season_for(2, 15), Season::Winter);
+    }
+    #[test]
+    fn winter_covers_the_whole_season_except_the_holidays() {
+        let winter_days = [(12, 1), (12, 15), (12, 23), (12, 26), (12, 30), (1, 2), (1, 5), (1, 8), (1, 31), (2, 1), (2, 12), (2, 15), (2, 28), (2, 29)];
+        for (m, d) in winter_days {
+            assert_eq!(season_for(m, d), Season::Winter, "{m}-{d}");
+        }
+        for (m, d, s) in [(12, 24, Season::Christmas), (12, 25, Season::Christmas), (12, 31, Season::NewYear), (1, 1, Season::NewYear), (1, 6, Season::Christmas), (1, 7, Season::Christmas), (2, 13, Season::Valentine), (2, 14, Season::Valentine)] {
+            assert_eq!(season_for(m, d), s, "{m}-{d}");
+        }
+        for (m, d) in [(11, 30), (3, 1), (7, 15)] {
+            assert_eq!(season_for(m, d), Season::Default, "{m}-{d}");
+        }
     }
     #[test]
     fn ten_special_days_in_a_year_and_ranges_never_overlap() {
@@ -128,7 +145,8 @@ mod tests {
         let mut special = 0;
         for (i, n) in days.iter().enumerate() {
             for d in 1..=*n {
-                let hits = RULES.iter().filter(|r| r.ranges.iter().any(|&rg| in_range((i as u32 + 1, d), rg))).count();
+                // winter is the background season: holidays win over it by order, so it is not counted here
+                let hits = RULES.iter().filter(|r| r.season != Season::Winter).filter(|r| r.ranges.iter().any(|&rg| in_range((i as u32 + 1, d), rg))).count();
                 assert!(hits <= 1, "{}-{d} matches several rules", i + 1);
                 special += hits;
             }
@@ -166,8 +184,10 @@ mod tests {
     fn manual_override_parsing() {
         assert_eq!(Season::parse("1"), Some(Season::Default));
         assert_eq!(Season::parse("5"), Some(Season::Valentine));
+        assert_eq!(Season::parse("6"), Some(Season::Winter));
+        assert_eq!(Season::parse("winter"), Some(Season::Winter));
         assert_eq!(Season::parse("0"), None);
-        assert_eq!(Season::parse("6"), None);
+        assert_eq!(Season::parse("7"), None);
         assert_eq!(Season::parse(" Halloween "), Some(Season::Halloween));
         assert_eq!(Season::parse("xmas"), Some(Season::Christmas));
         assert_eq!(Season::parse("new-year"), Some(Season::NewYear));

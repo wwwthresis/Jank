@@ -98,7 +98,7 @@ Stuck? Press `Ctrl+K` and type what you want to do. A full walkthrough is in the
 
 **Where are my files?** Projects are `.jank` files wherever you save them. Settings and autosave are in your normal Linux config and state folders.
 
-**Can I use the models I make in my game?** Jank! adds no watermark and does not claim your work. The final licence terms are set in [LICENSE](LICENSE) before the first public release.
+**Can I use the models I make in my game?** Yes. What you make with Jank! is yours, with no watermark and no royalty, commercial use included. See [LICENSE](LICENSE).
 
 **Windows or macOS?** Not yet. See the [roadmap](docs/ROADMAP.md).
 
@@ -120,5 +120,5 @@ Developers: start with [ARCHITECTURE](docs/ARCHITECTURE.md) and [CONTRIBUTING](C
 
 ## Licence
 
-Jank! is proprietary software, all rights reserved. See [LICENSE](LICENSE).
+Jank! is **source-available**: you can read the code, build it and change it for your own use, and use the program to make anything you like. You may not redistribute the program or its code, or publish forks. The full terms are in [LICENSE](LICENSE) (a draft until the first release).
 Third-party components and their licences are listed in `app/assets/THIRD_PARTY_LICENSES.txt` and inside the program (`Help > Licences`). The interface font Inter is under the SIL Open Font License 1.1.

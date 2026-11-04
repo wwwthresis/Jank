@@ -122,8 +122,6 @@ pub struct Settings {
     pub reduce_motion: bool,
     /// Shows explanatory tooltips when hovering controls.
     pub show_tooltips: bool,
-    /// Shows the splash screen at launch.
-    pub show_splash: bool,
     pub autosave_enabled: bool,
     /// Minutes between automatic recovery snapshots, 1..=60.
     pub autosave_minutes: u32,
@@ -145,7 +143,6 @@ impl Default for Settings {
             ui_scale: 1.0,
             reduce_motion: false,
             show_tooltips: true,
-            show_splash: true,
             autosave_enabled: true,
             autosave_minutes: 3,
             layout: PanelLayout::default(),
@@ -221,7 +218,6 @@ impl Settings {
         s.push_str(&format!("ui_scale = {:.2}\n", self.ui_scale));
         s.push_str(&format!("reduce_motion = {}\n", self.reduce_motion));
         s.push_str(&format!("show_tooltips = {}\n", self.show_tooltips));
-        s.push_str(&format!("show_splash = {}\n", self.show_splash));
         s.push_str(&format!("autosave = {}\n", self.autosave_enabled));
         s.push_str(&format!("autosave_minutes = {}\n", self.autosave_minutes));
         s.push_str(&format!("layout.left_width = {:.0}\n", self.layout.left_width));
@@ -285,7 +281,6 @@ impl Settings {
                 },
                 "reduce_motion" => parse_bool(v).map(|b| st.reduce_motion = b).unwrap_or_else(bad),
                 "show_tooltips" => parse_bool(v).map(|b| st.show_tooltips = b).unwrap_or_else(bad),
-                "show_splash" => parse_bool(v).map(|b| st.show_splash = b).unwrap_or_else(bad),
                 "autosave" => parse_bool(v).map(|b| st.autosave_enabled = b).unwrap_or_else(bad),
                 "autosave_minutes" => v.parse().map(|x| st.autosave_minutes = x).unwrap_or_else(|_| bad()),
                 "layout.left_width" => v.parse().map(|x| st.layout.left_width = x).unwrap_or_else(|_| bad()),

@@ -11,6 +11,10 @@ Thank you for helping. This page explains how work is organised.
 - Add a third-party crate only for a real need. Check licence (no GPL/AGPL), maturity and size, and regenerate `app/assets/THIRD_PARTY_LICENSES.txt` with `tools/gen_licenses.py`.
 - No MP4/H.264/WebM output (a project decision).
 
+## Licence of contributions
+
+By sending code or art you agree to section 6 of [LICENSE](LICENSE): you keep your copyright and give the project owner the right to use and distribute your contribution as part of Jank!.
+
 ## Workflow
 
 1. Open an issue (use the templates) or pick an existing one.

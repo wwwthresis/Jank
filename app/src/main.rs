@@ -448,7 +448,7 @@ const MAIN_SIZE: [f32; 2] = [1520.0, 920.0];
 const MAIN_MIN: [f32; 2] = [1100.0, 700.0];
 
 /// Command-line options. Anything that is not an option is treated as the path of a model or project to open.
-/// `--no-splash` skips the splash screen; `--splash 1-5|default|halloween|christmas|newyear|valentine` and `--date MM-DD` preview a season.
+/// `--no-splash` skips the splash screen; `--splash 1-6|default|halloween|christmas|newyear|valentine|winter` and `--date MM-DD` preview a season.
 struct Cli {
     path: Option<String>,
     splash: Option<psxcore::splash::Season>,
@@ -532,9 +532,9 @@ fn main() -> eframe::Result {
         let (m, d) = cli.date.unwrap_or_else(sysdate::today);
         psxcore::splash::season_for(m, d)
     });
-    // settings are tiny and decide whether a splash window is created at all, so they load first
     let (settings, problems) = commands_ui::load_settings();
-    let with_splash = !cli.no_splash && settings.show_splash;
+    // The splash is always shown; `--no-splash` / `JANK_NO_SPLASH` exist only for automated tests.
+    let with_splash = !cli.no_splash;
     let seed = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_nanos() as u64 / 1000);
     let boot = startup::Boot::spawn(season, seed, cli.path);
     compat::run("Jank!", MAIN_SIZE, MAIN_MIN, with_splash.then_some(splash::SPLASH_SIZE), move |ctx| {

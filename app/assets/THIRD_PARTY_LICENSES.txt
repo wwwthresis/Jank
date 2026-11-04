@@ -11357,3 +11357,4 @@ Butterfly model and texture (core/assets/butterfly.obj, butterfly_texture.png; d
 for use in Jank!. They are built into the program as the Butterfly primitive and carried inside the demo project.
 The butterfly icon in the Add row, the demo's meadow, bark, needle and sky pictures are original work made for Jank! and generated
 in code (core/examples/make_butterfly_demo.rs); no third-party pictures are included.
+Splash pictures (app/assets/splash/) - supplied by the project owner for use as the start-up screens of Jank!.

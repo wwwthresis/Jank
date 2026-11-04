@@ -3,6 +3,15 @@
 All notable changes to Jank! are listed here, newest first.
 Versions follow [docs/VERSIONING.md](docs/VERSIONING.md): `MAJOR.MINOR.PATCH[-channel]+BUILD`.
 
+## 0.2.0-alpha (build 31028)
+
+### Added
+- Winter splash screen, shown on every day from 1 December to the end of February except the holidays, which keep their own pictures.
+- Source-available licence and EULA draft in `LICENSE`.
+
+### Removed
+- The "Show splash screen at start" setting: the splash screen is always shown. Old settings files that still contain it open without a problem.
+
 ## 0.2.0-alpha (build 31027)
 
 ### Added

@@ -512,11 +512,6 @@ impl App {
                 self.settings.reduce_motion = v;
                 self.touch_settings();
             }
-            let mut v = self.settings.show_splash;
-            if toggle_tip(ui, &mut v, "Show splash screen at start", ACCENT, "Takes effect the next time Jank! starts").clicked() {
-                self.settings.show_splash = v;
-                self.touch_settings();
-            }
         });
         section(ui, "Panel layout", WARN, |ui| {
             dim(ui, "Panel sizes are remembered between sessions. Drag a panel edge to resize it.");

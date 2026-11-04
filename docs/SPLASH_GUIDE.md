@@ -1,6 +1,6 @@
 # Splash screens
 
-The picture shown while Jank! starts. The program picks one by today's date, so holidays get their own art.
+The picture shown while Jank! starts. The program picks one by today's date. Holidays have their own art, and winter has a picture for every other winter day.
 
 ## How a start looks
 1. The bar fills to about 40% (the intro).
@@ -24,12 +24,15 @@ Timings are constants in `app/src/splash.rs` (`MIN_SECS`) and `app/src/startup.r
 
 ## Previewing
 ```
-jank --splash christmas        # force a season (id or number 1-5)
+jank --splash christmas        # force a season (id or number 1-6)
 jank --date 12-25              # pretend it is that day
 jank --no-splash               # skip it
 ```
 Environment variables `JANK_SPLASH`, `JANK_DATE` and `JANK_NO_SPLASH` do the same.
 
+## Priority
+The winter picture (1 December - end of February) is the last rule in the table. Every holiday rule above it wins on its own days: Christmas (24-25 Dec, 6-7 Jan), New Year (31 Dec - 1 Jan) and Valentine (13-14 Feb). Keep the winter rule last when you add seasons.
+
 ## Notes
 - Several files in one `Rule` are variants; one is picked per launch.
-- The current pictures have the build number painted into the art. It is not updated automatically.
+- The older pictures have the build number painted into the art; the winter picture does not. It is not updated automatically.

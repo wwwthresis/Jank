@@ -167,6 +167,7 @@ lines.append("Butterfly model and texture (core/assets/butterfly.obj, butterfly_
 lines.append("for use in Jank!. They are built into the program as the Butterfly primitive and carried inside the demo project.")
 lines.append("The butterfly icon in the Add row, the demo's meadow, bark, needle and sky pictures are original work made for Jank! and generated")
 lines.append("in code (core/examples/make_butterfly_demo.rs); no third-party pictures are included.")
+lines.append("Splash pictures (app/assets/splash/) - supplied by the project owner for use as the start-up screens of Jank!.")
 os.makedirs(os.path.dirname(OUT), exist_ok=True)
 open(OUT, "w", encoding="utf8").write("\n".join(lines) + "\n")
 print(f"wrote {OUT}: {len(pkgs)} crates, {len(texts)} distinct texts, {len(missing)} without licence file")

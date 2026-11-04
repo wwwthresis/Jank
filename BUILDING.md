@@ -17,7 +17,7 @@ cargo build --release
 
 or simply `cargo run --release`. The debug profile also works (`opt-level = 1`; the engine crate stays at `opt-level = 3`).
 
-Command-line options: `--no-splash`, `--splash 1-5|default|halloween|christmas|newyear|valentine`, `--date MM-DD` (preview a seasonal splash), and an optional project path.
+Command-line options `--no-splash` (automated tests only: users always see the splash), `--splash 1-6|default|halloween|christmas|newyear|valentine|winter`, `--date MM-DD` (preview a seasonal splash), and an optional project path.
 
 ## Test the engine
 
@@ -33,7 +33,7 @@ cargo test --offline     # unit, fixture and demo-project tests; the engine has 
 | `JANK_CONFIG_DIR` | folder for settings and key bindings (default: XDG config dir) |
 | `JANK_STATE_DIR` | folder for autosave / crash-recovery state (default: XDG state dir) |
 | `JANK_AUTOSAVE_SECONDS` | overrides the autosave interval (used by automated tests) |
-| `JANK_NO_SPLASH` | skip the splash screen |
+| `JANK_NO_SPLASH` | skip the splash screen (automated tests only) |
 | `JANK_SPLASH`, `JANK_DATE` | force a seasonal splash / pretend it is MM-DD |
 | `LIBGL_ALWAYS_SOFTWARE=1` | Mesa software rendering (headless or no GPU) |
 
