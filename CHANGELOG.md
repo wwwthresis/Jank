@@ -3,6 +3,14 @@
 All notable changes to Jank! are listed here, newest first.
 Versions follow [docs/VERSIONING.md](docs/VERSIONING.md): `MAJOR.MINOR.PATCH[-channel]+BUILD`.
 
+## 0.2.0-alpha (build 31032)
+
+### Added
+- **Discord Rich Presence**: "Playing Jank!" with the project, the mode and what you are doing (e.g. "Editing polygons · 96 vertices, 72 faces"), the elapsed time, the Jank! logo and a mode badge; "Taking a break" after five minutes without input. Settings → Discord turns it on or off and hides the project name (hidden by default), the details or the timer, shows the connection state and a preview of the card. Talks only to the local Discord app (IPC socket, no SDK, no network, no token); see [docs/DISCORD.md](docs/DISCORD.md). Art assets for the Discord application in `docs/discord/` (`tools/gen_discord_assets.py`).
+
+### Fixed
+- The Settings window no longer jumps to a screen edge when a page is re-measured; it stays where it is and moves only by dragging.
+
 ## 0.2.0-alpha (build 31031)
 
 ### Added

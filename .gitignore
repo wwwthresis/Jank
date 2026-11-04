@@ -2,3 +2,4 @@ target/
 *.part
 *.tmp
 *.swp
+__pycache__/

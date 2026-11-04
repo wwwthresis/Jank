@@ -36,3 +36,4 @@ pub mod uvisland;
 pub mod layers;
 pub mod lighting;
 pub mod themes;
+pub mod discord;

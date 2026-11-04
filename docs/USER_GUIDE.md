@@ -90,6 +90,7 @@ Hold `Space` over the view, point at a tool and release (or tap `Space` and clic
 - **Interface**: interface scale, tooltips, reduced motion, panel layout.
 - **Viewport**: sharpness, *Viewport shadows* (like the render, up to Medium, Blob or Off - only the editing view, never the render or export), redraw only when something changes, orbit and zoom speed, inverted vertical orbit, render threads, the preview window.
 - **Canvas & animation**: pixel grid of the texture editor, onion-skin strength, composition guides for Render mode (thirds, centre, safe area, golden ratio).
+- **Discord**: show *Playing Jank!* on your Discord profile; choose whether the project name, the details and the time are shown (see [DISCORD.md](DISCORD.md)).
 - **Files** and **Hotkeys**: autosave and recovery; every shortcut can be changed, `F1` shows the current list.
 
 ## The workspace

@@ -268,6 +268,26 @@ pub struct Settings {
     pub stabilizer: f32,
     /// Outline the object under the mouse in the viewport.
     pub hover_highlight: bool,
+    /// Discord Rich Presence: show "Playing Jank!" and what you are doing on your Discord profile.
+    pub discord: DiscordPrefs,
+}
+
+/// Privacy choices of the Discord activity.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct DiscordPrefs {
+    pub enabled: bool,
+    /// Show the project name (off: "Working on a project").
+    pub show_project: bool,
+    /// Show the mode and what you are doing in it (off: "Making low-poly art").
+    pub show_activity: bool,
+    /// Show the time since the project was opened.
+    pub show_time: bool,
+}
+
+impl Default for DiscordPrefs {
+    fn default() -> Self {
+        DiscordPrefs { enabled: true, show_project: false, show_activity: true, show_time: true }
+    }
 }
 
 impl Default for Settings {
@@ -304,6 +324,7 @@ impl Default for Settings {
             last_seen_build: 0,
             stabilizer: 0.0,
             hover_highlight: true,
+            discord: DiscordPrefs::default(),
         }
     }
 }
@@ -404,6 +425,10 @@ impl Settings {
         s.push_str(&format!("last_seen_build = {}\n", self.last_seen_build));
         s.push_str(&format!("stabilizer = {:.2}\n", self.stabilizer));
         s.push_str(&format!("hover_highlight = {}\n", self.hover_highlight));
+        s.push_str(&format!("discord = {}\n", self.discord.enabled));
+        s.push_str(&format!("discord_project = {}\n", self.discord.show_project));
+        s.push_str(&format!("discord_activity = {}\n", self.discord.show_activity));
+        s.push_str(&format!("discord_time = {}\n", self.discord.show_time));
         if let Some(d) = &self.last_dir {
             s.push_str(&format!("last_dir = {d}\n"));
         }
@@ -485,6 +510,10 @@ impl Settings {
                 "last_seen_build" => v.parse().map(|x| st.last_seen_build = x).unwrap_or_else(|_| bad()),
                 "stabilizer" => v.parse().map(|x| st.stabilizer = x).unwrap_or_else(|_| bad()),
                 "hover_highlight" => parse_bool(v).map(|b| st.hover_highlight = b).unwrap_or_else(bad),
+                "discord" => parse_bool(v).map(|b| st.discord.enabled = b).unwrap_or_else(bad),
+                "discord_project" => parse_bool(v).map(|b| st.discord.show_project = b).unwrap_or_else(bad),
+                "discord_activity" => parse_bool(v).map(|b| st.discord.show_activity = b).unwrap_or_else(bad),
+                "discord_time" => parse_bool(v).map(|b| st.discord.show_time = b).unwrap_or_else(bad),
                 "last_dir" => st.last_dir = Some(v.to_string()),
                 "recent" => recent.push(v.to_string()),
                 _ => {} // written by a newer version: ignore silently
@@ -563,6 +592,7 @@ mod tests {
         s.pixel_grid = false;
         s.onion_opacity = 0.35;
         s.guides = Guides::Thirds;
+        s.discord = DiscordPrefs { enabled: false, show_project: true, show_activity: false, show_time: false };
         let (back, problems) = Settings::from_text(&s.to_text());
         assert!(problems.is_empty(), "{problems:?}");
         assert_eq!(back.recent_files, vec!["/work/b.jank", "/work/a.jank"]);

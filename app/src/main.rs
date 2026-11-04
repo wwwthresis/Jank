@@ -5,6 +5,7 @@ mod commands_ui;
 mod crash;
 mod compat;
 mod dialogs;
+mod discord_ui;
 mod editui;
 mod extras_ui;
 mod gizmo_ui;
@@ -120,6 +121,8 @@ pub struct App {
     pub vp_width: f32,
     /// Tab presses taken away from egui's focus navigation (Tab toggles Edit mode).
     pub tab_chords: Vec<psxcore::keymap::Chord>,
+    /// Discord Rich Presence connection and timer.
+    pub rpc: discord_ui::Rpc,
 }
 
 pub const SURF_VIEW: usize = 0;
@@ -213,6 +216,7 @@ impl App {
             idx_edit: None,
             vp_width: 1.0,
             tab_chords: vec![],
+            rpc: Default::default(),
         };
         let settings_existed = psxcore::settings::settings_path().is_some_and(|p| p.exists());
         app.reload_themes();
@@ -382,6 +386,7 @@ impl eframe::App for App {
 
         self.dialogs(ctx);
         self.radial_ui(ctx);
+        self.discord_tick(ctx);
         self.run_pending(ctx);
         self.toasts_ui(ctx, dt);
         self.sync_look(ctx);

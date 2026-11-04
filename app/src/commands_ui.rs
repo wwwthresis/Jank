@@ -28,6 +28,7 @@ pub enum SettingsTab {
     Viewport,
     Canvas,
     Files,
+    Discord,
     Shortcuts,
 }
 
@@ -45,11 +46,14 @@ pub struct SettingsState {
     pub look_epoch: u32,
     /// Frames left in which the window is put back in the centre after an appearance change.
     pub recenter: u8,
+    /// Where the window is; it is pinned there each frame (egui would otherwise throw a fixed-size
+    /// window to a screen edge when its contents are re-measured) and only moves by dragging.
+    pub pos: Option<egui::Pos2>,
 }
 
 impl SettingsState {
     pub fn new(scale: f32) -> Self {
-        SettingsState { tab: SettingsTab::Appearance, capturing: None, filter: String::new(), note: String::new(), scale_edit: scale, look_epoch: 0, recenter: 0 }
+        SettingsState { tab: SettingsTab::Appearance, capturing: None, filter: String::new(), note: String::new(), scale_edit: scale, look_epoch: 0, recenter: 0, pos: None }
     }
 }
 
@@ -531,10 +535,12 @@ impl App {
         let mut win = egui::Window::new("Settings").collapsible(false).resizable(false).fixed_size(vec2(740.0, 520.0)).default_pos(compat::centered_pos(ctx, size));
         if st.recenter > 0 {
             st.recenter -= 1;
-            win = win.current_pos(compat::centered_pos(ctx, size));
+            st.pos = None;
             ctx.request_repaint();
         }
-        win.show(ctx, |ui| {
+        let pos = st.pos.unwrap_or_else(|| compat::centered_pos(ctx, size));
+        win = win.current_pos(pos);
+        let shown = win.show(ctx, |ui| {
             ui.horizontal_top(|ui| {
                 // Obsidian-style navigation column
                 ui.allocate_ui_with_layout(vec2(168.0, 470.0), egui::Layout::top_down(egui::Align::Min), |ui| {
@@ -547,6 +553,7 @@ impl App {
                         (SettingsTab::Viewport, Icon::Cube, "Viewport", "Drawing quality, shadows, navigation and the render preview window"),
                         (SettingsTab::Canvas, Icon::Onion, "Canvas & animation", "Pixel grid of the texture editor and onion-skin strength"),
                         (SettingsTab::Files, Icon::Folder, "Files", "Autosave, recovery and recent files"),
+                        (SettingsTab::Discord, Icon::Presence, "Discord", "Your activity on Discord: on or off, project name and details"),
                         (SettingsTab::Shortcuts, Icon::Keyboard, "Hotkeys", "Change the keyboard shortcut of any command"),
                     ] {
                         if crate::widgets::nav_item(ui, icon, name, st.tab == t, tip).clicked() {
@@ -566,6 +573,7 @@ impl App {
                         SettingsTab::Viewport => self.settings_viewport(ui),
                         SettingsTab::Canvas => self.settings_canvas(ui),
                         SettingsTab::Files => self.settings_files(ui),
+                        SettingsTab::Discord => self.settings_discord(ui),
                         SettingsTab::Shortcuts => self.settings_shortcuts(ui, &mut st),
                     });
                     ui.add_space(6.0);
@@ -578,6 +586,13 @@ impl App {
                 });
             });
         });
+        if let Some(r) = shown {
+            let delta = if r.response.dragged() { r.response.drag_delta() } else { vec2(0.0, 0.0) };
+            let screen = compat::screen_rect(ctx);
+            let p = pos + delta;
+            // keep the title bar reachable
+            st.pos = Some(egui::pos2(p.x.clamp(screen.min.x - size.x + 80.0, screen.max.x - 80.0), p.y.clamp(screen.min.y, screen.max.y - 40.0)));
+        }
         open.then_some(Dialog::Settings(st))
     }
 

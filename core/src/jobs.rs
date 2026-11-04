@@ -60,6 +60,8 @@ pub struct ExportJob {
     progress: Arc<AtomicU32>,
     cancel: Arc<AtomicBool>,
     handle: Option<JoinHandle<Result<ExportReport, String>>>,
+    /// A video (true) or a single picture.
+    pub video: bool,
 }
 
 fn part_path(p: &Path) -> PathBuf {
@@ -150,6 +152,7 @@ impl ExportJob {
         let progress = Arc::new(AtomicU32::new(0));
         let cancel = Arc::new(AtomicBool::new(false));
         let (p, c, proj) = (progress.clone(), cancel.clone(), project.clone());
+        let video = matches!(spec.target, Target::Video(_));
         let handle = std::thread::Builder::new()
             .name("jank-export".into())
             .spawn(move || {
@@ -157,7 +160,7 @@ impl ExportJob {
                 std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| run(&proj, anim_index, &spec, &p, &c))).unwrap_or_else(|_| Err("internal export error".into()))
             })
             .map_err(|e| format!("could not start the export: {e}"))?;
-        Ok(ExportJob { progress, cancel, handle: Some(handle) })
+        Ok(ExportJob { progress, cancel, handle: Some(handle), video })
     }
     /// 0.0..=1.0
     pub fn progress(&self) -> f32 {
