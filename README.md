@@ -120,5 +120,5 @@ Developers: start with [ARCHITECTURE](docs/ARCHITECTURE.md) and [CONTRIBUTING](C
 
 ## Licence
 
-Jank! is **source-available**: you can read the code, build it and change it for your own use, and use the program to make anything you like. You may not redistribute the program or its code, or publish forks. The full terms are in [LICENSE](LICENSE) (a draft until the first release).
+Jank! is **source-available**: you can read the code, build it and change it for your own use, and use the program to make anything you like. You may not redistribute the program or its code, or publish forks. The full terms are in [LICENSE](LICENSE).
 Third-party components and their licences are listed in `app/assets/THIRD_PARTY_LICENSES.txt` and inside the program (`Help > Licences`). The interface font Inter is under the SIL Open Font License 1.1.
