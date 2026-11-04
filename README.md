@@ -6,9 +6,6 @@
 Model it. Paint it. Pose it. Animate it. Render it. All in one small program.
 
 `0.2.0-alpha` · Linux · Written in Rust · No external tools needed
-
-<a href="https://thresis.itch.io/jank"><img src="docs/img/itch-badge.svg" alt="Available on itch.io" width="220"></a>
-
 </div>
 
 ![Jank! posing the butterfly demo](docs/img/pose.png)
@@ -54,11 +51,6 @@ You do not need to know any 3D software first. Everything has a tooltip: hold th
 - **Comfort**: command palette (`Ctrl+K`), remappable hotkeys, undo/redo, autosave and crash recovery, saved layout, UI scale, seasonal splash screens.
 
 Everything, including the renderer and the image and video encoders, is built into the program.
-
-## Download
-
-Prebuilt Linux build (x86_64): **[thresis.itch.io/jank](https://thresis.itch.io/jank)**.
-Extract the archive and run `./jank`. Nothing else has to be installed.
 
 ## Build from source
 
