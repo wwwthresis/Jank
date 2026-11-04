@@ -55,7 +55,12 @@ You do not need to know any 3D software first. Everything has a tooltip: hold th
 
 Everything, including the renderer and the image and video encoders, is built into the program.
 
-## Get it running
+## Download
+
+Prebuilt Linux build (x86_64): **[thresis.itch.io/jank](https://thresis.itch.io/jank)**.
+Extract the archive and run `./jank`. Nothing else has to be installed.
+
+## Build from source
 
 You need Linux and the Rust toolchain (the compiler). If you do not have Rust yet:
 
