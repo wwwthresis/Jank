@@ -116,7 +116,7 @@ fn chip_row<T: Copy + PartialEq>(ui: &mut Ui, cur: &mut T, items: &[(T, &str, &s
     let mut ch = false;
     ui.horizontal_wrapped(|ui| {
         for (v, label, tip) in items {
-            if Btn::new(label).accent(ACCENT).on(*cur == *v).tip(tip).size(vec2(22.0 + label.chars().count() as f32 * 7.6, 30.0)).show(ui).clicked() {
+            if Btn::new(label).accent(accent()).on(*cur == *v).tip(tip).size(vec2(22.0 + label.chars().count() as f32 * 7.6, 30.0)).show(ui).clicked() {
                 *cur = *v;
                 ch = true;
             }
@@ -134,14 +134,14 @@ impl App {
         }
         let (frames, total, fps) = self.ed.animation().map_or((0, 0, 12.0), |a| (a.frames.len(), a.total_ticks(), a.fps()));
         let busy = self.job.is_some();
-        section(ui, "Output", ACCENT, |ui| {
+        section(ui, "Output", accent(), |ui| {
             chip_row(ui, &mut self.export.kind, &[(Kind::Photo, "Photo", "Save a single frame as an image"), (Kind::Video, "Video / animation", "Save the whole animation")]);
         });
-        section(ui, "Size", ACCENT, |ui| {
+        section(ui, "Size", accent(), |ui| {
             ui.horizontal_wrapped(|ui| {
                 for k in [1u32, 2, 3, 4, 6, 8] {
                     let on = self.export.w == nw * k && self.export.h == nh * k;
-                    if Btn::new(&format!("×{k}")).accent(ACCENT).on(on).tip("Whole multiple of the render size: pixels stay perfectly square").size(vec2(46.0, 28.0)).show(ui).clicked() {
+                    if Btn::new(&format!("×{k}")).accent(accent()).on(on).tip("Whole multiple of the render size: pixels stay perfectly square").size(vec2(46.0, 28.0)).show(ui).clicked() {
                         self.export.w = nw * k;
                         self.export.h = nh * k;
                     }
@@ -149,7 +149,7 @@ impl App {
             });
             ui.horizontal_wrapped(|ui| {
                 for (w, h, l) in [(1280u32, 720u32, "720p"), (1920, 1080, "1080p"), (2560, 1440, "1440p"), (3840, 2160, "4K")] {
-                    if Btn::new(l).accent(ACCENT).on(self.export.w == w && self.export.h == h).size(vec2(60.0, 28.0)).show(ui).clicked() {
+                    if Btn::new(l).accent(accent()).on(self.export.w == w && self.export.h == h).size(vec2(60.0, 28.0)).show(ui).clicked() {
                         self.export.w = w;
                         self.export.h = h;
                     }
@@ -166,7 +166,7 @@ impl App {
                 }
                 self.export.w = w;
                 self.export.h = h;
-                toggle(ui, &mut self.export.lock, "keep ratio", ACCENT);
+                toggle(ui, &mut self.export.lock, "keep ratio", accent());
             });
             if self.export.w as f32 / self.export.h.max(1) as f32 != nw as f32 / nh.max(1) as f32 {
                 dim(ui, "The aspect ratio differs from the scene, so the frame will be stretched.");
@@ -174,7 +174,7 @@ impl App {
         });
         match self.export.kind {
             Kind::Photo => {
-                section(ui, "Photo format", ACCENT, |ui| {
+                section(ui, "Photo format", accent(), |ui| {
                     chip_row(ui, &mut self.export.photo, &[(PhotoFmt::Png, "PNG", "Lossless, keeps transparency"), (PhotoFmt::PngRgb, "PNG, no alpha", "Lossless, smaller file, no transparency"), (PhotoFmt::Jpeg, "JPEG", "Lossy, small files"), (PhotoFmt::Bmp, "BMP", "Uncompressed bitmap"), (PhotoFmt::Tga, "TGA", "Targa image, common in game pipelines"), (PhotoFmt::Ppm, "PPM", "Plain portable pixmap")]);
                     if self.export.photo == PhotoFmt::Jpeg {
                         slider_u(ui, "quality", &mut self.export.jpeg_q, 1..=100);
@@ -189,7 +189,7 @@ impl App {
                 });
             }
             Kind::Video => {
-                section(ui, "Video format", ACCENT, |ui| {
+                section(ui, "Video format", accent(), |ui| {
                     chip_row(ui, &mut self.export.video, &[(VideoFmt::AviQuality, "AVI quality", "AVI with Motion-JPEG frames, set by quality"), (VideoFmt::AviBitrate, "AVI bitrate", "AVI with Motion-JPEG frames, aimed at a target bitrate"), (VideoFmt::AviRaw, "AVI raw", "Uncompressed AVI: huge files, no quality loss"), (VideoFmt::Gif, "GIF", "Looping animated GIF"), (VideoFmt::PngSeq, "PNG frames", "A folder of numbered PNG images for any video editor")]);
                     match self.export.video {
                         VideoFmt::AviQuality => {
@@ -203,7 +203,7 @@ impl App {
                             dim(ui, &format!("Estimated size: {mb:.0} MB"));
                         }
                         VideoFmt::Gif => {
-                            toggle(ui, &mut self.export.gif_loop, "Loop forever", ACCENT);
+                            toggle(ui, &mut self.export.gif_loop, "Loop forever", accent());
                         }
                         VideoFmt::PngSeq => {}
                     }
@@ -212,12 +212,12 @@ impl App {
                 });
             }
         }
-        section(ui, "File", ACCENT, |ui| {
+        section(ui, "File", accent(), |ui| {
             ui.horizontal(|ui| {
                 ui.add(egui::TextEdit::singleline(&mut self.export.name).desired_width(150.0));
                 dim(ui, &self.ext_label());
             });
-            if Btn::new("Folder…").icon(Icon::Open).accent(ACCENT).size(vec2(ui.available_width(), 30.0)).show(ui).clicked() {
+            if Btn::new("Folder…").icon(Icon::Open).accent(accent()).size(vec2(ui.available_width(), 30.0)).show(ui).clicked() {
                 self.dialog = Some(browser(Purpose::ExportFolder));
             }
             dim(ui, &self.export.dir.display().to_string());
@@ -228,7 +228,7 @@ impl App {
             if Btn::new("Cancel").icon(Icon::Trash).accent(DANGER).size(vec2(ui.available_width(), 34.0)).show(ui).clicked() {
                 job.cancel();
             }
-        } else if Btn::new("Save").icon(Icon::Export).accent(ACCENT).enabled(!busy && frames > 0).size(vec2(ui.available_width(), 42.0)).show(ui).clicked() {
+        } else if Btn::new("Save").icon(Icon::Export).accent(accent()).enabled(!busy && frames > 0).size(vec2(ui.available_width(), 42.0)).show(ui).clicked() {
             self.start_export();
         }
     }
@@ -327,7 +327,7 @@ impl App {
                     (AboutTab::Keys, "Keys", "Keyboard and mouse reference"),
                     (AboutTab::Licenses, "Licenses", "Licences of the open-source libraries built into Jank!"),
                 ] {
-                    if Btn::new(name).on(tab == t).accent(ACCENT).tip(tip).size(vec2(110.0, 30.0)).show(ui).clicked() {
+                    if Btn::new(name).on(tab == t).accent(accent()).tip(tip).size(vec2(110.0, 30.0)).show(ui).clicked() {
                         tab = t;
                     }
                 }
@@ -337,7 +337,7 @@ impl App {
                 AboutTab::Overview => {
                     dim(ui, "Modeling, texture painting, posing, frame-by-frame animation, and video and photo output in one program.");
                     ui.add_space(6.0);
-                    section(ui, "Version", ACCENT, |ui| {
+                    section(ui, "Version", accent(), |ui| {
                         dim(ui, "MAJOR.MINOR.PATCH[-channel]+BUILD, for example 0.2.0-alpha+31027.");
                         dim(ui, "Channels are ordered alpha < beta < rc < stable. The build number grows with every build and is the number to quote in a bug report.");
                         dim(ui, "Project files carry their own format number; older files always open, newer ones are refused with a clear message.");
@@ -363,7 +363,7 @@ impl App {
                                         ui.set_min_size(vec2(230.0, 22.0));
                                         ui.label(egui::RichText::new(c.title).size(13.5))
                                     });
-                                    ui.label(egui::RichText::new(l.join("   or   ")).size(13.5).color(ACCENT));
+                                    ui.label(egui::RichText::new(l.join("   or   ")).size(13.5).color(accent()));
                                 });
                             }
                         }
@@ -408,7 +408,7 @@ impl App {
             ui.set_min_width(380.0);
             dim(ui, "This project has changes that have not been saved.");
             ui.horizontal(|ui| {
-                if Btn::new("Save").icon(Icon::Save).accent(ACCENT).show(ui).clicked() {
+                if Btn::new("Save").icon(Icon::Save).accent(accent()).show(ui).clicked() {
                     if self.ed.save().is_ok() {
                         result = None;
                         self.proceed(ctx, after);
@@ -466,13 +466,13 @@ impl App {
             });
             ui.horizontal(|ui| {
                 ui.add(egui::TextEdit::singleline(&mut b.fb.query).hint_text("search").desired_width(180.0));
-                toggle(ui, &mut b.fb.show_hidden, "hidden", ACCENT);
+                toggle(ui, &mut b.fb.show_hidden, "hidden", accent());
             });
             ui.horizontal(|ui| {
                 ui.vertical(|ui| {
                     ui.set_min_width(140.0);
                     for (name, path) in FileBrowser::places() {
-                        if Btn::new(&name).accent(ACCENT).size(vec2(136.0, 30.0)).show(ui).clicked() {
+                        if Btn::new(&name).accent(accent()).size(vec2(136.0, 30.0)).show(ui).clicked() {
                             b.fb.set_dir(&path);
                         }
                     }
@@ -521,7 +521,7 @@ impl App {
                 let exists = saving && target.exists();
                 let label = if folder { "Select this folder" } else if saving { if exists { "Replace" } else { "Save" } } else { "Open" };
                 let ok = folder || !b.name.trim().is_empty();
-                if Btn::new(label).icon(if saving || folder { Icon::Save } else { Icon::Open }).accent(if exists { WARN } else { ACCENT }).enabled(ok).show(ui).clicked() {
+                if Btn::new(label).icon(if saving || folder { Icon::Save } else { Icon::Open }).accent(if exists { WARN } else { accent() }).enabled(ok).show(ui).clicked() {
                     chosen = Some(if folder { b.fb.dir.clone() } else { target });
                 }
                 if Btn::new("Cancel").show(ui).clicked() {
@@ -599,7 +599,7 @@ impl App {
         egui::Area::new(egui::Id::new("jank_toasts")).order(egui::Order::Tooltip).interactable(false).anchor(Align2::RIGHT_BOTTOM, vec2(-16.0, -16.0)).show(ctx, |ui| {
             ui.set_max_width(400.0);
             for t in &self.toasts {
-                let col = if t.kind == ToastKind::Error { DANGER } else { ACCENT };
+                let col = if t.kind == ToastKind::Error { DANGER } else { accent() };
                 compat::frame(BG2, 12.0).show(ui, |ui| {
                     ui.set_max_width(376.0);
                     ui.colored_label(col, t.text.as_str());

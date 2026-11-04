@@ -10,7 +10,7 @@ Where Jank! stands and what remains before a full 1.0 release. Status: **done**,
 | 2 | Click-through check of selection tools and palette saving in the GUI | to do |
 | 3 | Save and reopen scene layers through the file dialog (by hand) | to do |
 | 4 | Smoother strokes when painting in the 3D viewport | to do |
-| 5 | More options in Settings (viewport, shadows defaults) | to do |
+| 5 | More options in Settings (appearance, viewport shadows, navigation, canvas) | done |
 | 6 | Packaging: AppImage, `.deb`, Flatpak | to do |
 | 7 | Release pipeline: build number stamping, checksums, signing | to do |
 | 8 | Update to the newest `eframe`/`egui` and the newest stable Rust | to do |

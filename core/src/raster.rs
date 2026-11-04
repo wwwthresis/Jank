@@ -455,6 +455,8 @@ pub struct Renderer {
     pub layer_aspect: Option<f32>,
     /// Shadows for the next `render_layered` call (taken by it, so they never carry over to another frame).
     pub shadow: Option<crate::shadow::ShadowInput>,
+    /// Upper limit for the scene's shadows in pictures drawn by this renderer (the editing viewport); `None` = exactly as the scene says.
+    pub shadow_cap: Option<crate::lighting::ShadowCap>,
     // buffers reused between frames
     bands: Vec<Vec<u32>>,
 }
@@ -466,7 +468,7 @@ pub fn default_threads() -> usize {
 
 impl Renderer {
     pub fn new(w: u32, h: u32) -> Self {
-        Self { frame: Frame::new(w, h), threads: default_threads(), layer_aspect: None, shadow: None, bands: Vec::new() }
+        Self { frame: Frame::new(w, h), threads: default_threads(), layer_aspect: None, shadow: None, shadow_cap: None, bands: Vec::new() }
     }
 
     pub fn render(&mut self, style: &PsxStyle, cam: &Camera, insts: &[Instance]) {

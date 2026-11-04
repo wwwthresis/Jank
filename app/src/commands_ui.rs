@@ -7,7 +7,7 @@ use crate::icons::Icon;
 use crate::theme::*;
 use crate::widgets::{dim, section, toggle_tip, Btn};
 use crate::{compat, App, ToastKind};
-use eframe::egui::{self, vec2, Align2, Context, Key, Modifiers, Sense};
+use eframe::egui::{self, vec2, Align2, Color32, Context, Key, Modifiers, Sense};
 use psxcore::commands::{self, Category, CommandId, COMMANDS};
 use psxcore::editor::{Mode, Primitive};
 use psxcore::recovery::{self, Snapshot};
@@ -23,8 +23,10 @@ pub struct PaletteState {
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum SettingsTab {
+    Appearance,
     Interface,
     Viewport,
+    Canvas,
     Files,
     Shortcuts,
 }
@@ -39,11 +41,15 @@ pub struct SettingsState {
     pub note: String,
     /// Scale chosen with the slider; applied by the Apply button so the slider does not move under the mouse.
     pub scale_edit: f32,
+    /// Appearance generation the window was laid out with (see [`Housekeeping::look_epoch`]).
+    pub look_epoch: u32,
+    /// Frames left in which the window is put back in the centre after an appearance change.
+    pub recenter: u8,
 }
 
 impl SettingsState {
     pub fn new(scale: f32) -> Self {
-        SettingsState { tab: SettingsTab::Interface, capturing: None, filter: String::new(), note: String::new(), scale_edit: scale }
+        SettingsState { tab: SettingsTab::Appearance, capturing: None, filter: String::new(), note: String::new(), scale_edit: scale, look_epoch: 0, recenter: 0 }
     }
 }
 
@@ -54,11 +60,15 @@ pub struct Housekeeping {
     pub last_autosave: Instant,
     pub snapshot_written: bool,
     pub autosave_error_shown: bool,
+    /// The appearance last pushed to egui; re-applied only when the settings differ.
+    pub look: Option<crate::theme::Look>,
+    /// Counts appearance changes, so open windows can react to new metrics.
+    pub look_epoch: u32,
 }
 
 impl Housekeeping {
     pub fn new() -> Self {
-        Housekeeping { settings_dirty: false, settings_changed: Instant::now(), last_autosave: Instant::now(), snapshot_written: false, autosave_error_shown: false }
+        Housekeeping { settings_dirty: false, settings_changed: Instant::now(), last_autosave: Instant::now(), snapshot_written: false, autosave_error_shown: false, look: None, look_epoch: 0 }
     }
 }
 
@@ -257,10 +267,25 @@ impl App {
         }
     }
 
+    /// Pushes the appearance settings (accent, density, text size) to egui when they changed.
+    /// Called after the frame's UI, so a whole frame is always laid out with one set of metrics.
+    pub fn sync_look(&mut self, ctx: &Context) {
+        let look = crate::theme::Look { accent: self.settings.accent.rgb(), density: self.settings.density, text: self.settings.text_size };
+        if self.hk.look != Some(look) {
+            crate::theme::apply_look(ctx, look);
+            self.hk.look = Some(look);
+            self.hk.look_epoch = self.hk.look_epoch.wrapping_add(1);
+            ctx.request_repaint();
+        }
+    }
+
     /// Per-frame work: preferences, UI scale, delayed settings save, autosave.
     pub fn housekeeping(&mut self, ctx: &Context) {
         crate::widgets::set_prefs(self.settings.reduce_motion, self.settings.show_tooltips);
         compat::set_scale(ctx, self.settings.ui_scale);
+        if self.hk.look.is_none() {
+            self.sync_look(ctx);
+        }
         if self.hk.settings_dirty && self.hk.settings_changed.elapsed() > Duration::from_millis(1500) && !ctx.input(|i| i.pointer.any_down()) {
             self.save_settings();
         }
@@ -326,7 +351,7 @@ impl App {
             dim(ui, &format!("A snapshot of {what} was saved {}. You can restore it now.", recovery::age_text(s.unix_time, recovery::unix_now())));
             ui.add_space(6.0);
             ui.horizontal(|ui| {
-                if Btn::new("Recover").icon(Icon::Open).accent(ACCENT).tip("Open the snapshot as an unsaved project").show(ui).clicked() {
+                if Btn::new("Recover").icon(Icon::Open).accent(accent()).tip("Open the snapshot as an unsaved project").show(ui).clicked() {
                     match recovery::restore(&s) {
                         Ok(ed) => {
                             self.ed = ed;
@@ -376,7 +401,7 @@ impl App {
         egui::Window::new("command_palette").title_bar(false).resizable(false).collapsible(false).anchor(Align2::CENTER_TOP, vec2(0.0, 80.0)).show(ctx, |ui| {
             ui.set_width(600.0);
             ui.horizontal(|ui| {
-                crate::widgets::icon_inline(ui, Icon::Search, ACCENT);
+                crate::widgets::icon_inline(ui, Icon::Search, accent());
                 let r = ui.add(egui::TextEdit::singleline(&mut st.query).hint_text("Type a command, for example \"save\" or \"mirror\"").desired_width(f32::INFINITY).font(egui::FontId::proportional(16.0)));
                 r.request_focus();
                 if r.changed() {
@@ -397,7 +422,7 @@ impl App {
                     let sel = st.selected == i;
                     if sel {
                         ui.painter().rect_filled(rect, compat::cr(7.0), BG3);
-                        ui.painter().rect_filled(egui::Rect::from_min_size(rect.min + vec2(0.0, 6.0), vec2(3.0, rect.height() - 12.0)), compat::cr(2.0), ACCENT);
+                        ui.painter().rect_filled(egui::Rect::from_min_size(rect.min + vec2(0.0, 6.0), vec2(3.0, rect.height() - 12.0)), compat::cr(2.0), accent());
                         if up || down {
                             ui.scroll_to_rect(rect, None);
                         }
@@ -407,7 +432,7 @@ impl App {
                     let label = km.label(h.id);
                     compat::text(ui.painter(), rect.right_center() + vec2(-12.0, -9.0), Align2::RIGHT_CENTER, info.category.title(), 11.5, DIM);
                     if !label.is_empty() {
-                        compat::text(ui.painter(), rect.right_center() + vec2(-12.0, 9.0), Align2::RIGHT_CENTER, &label, 12.5, ACCENT);
+                        compat::text(ui.painter(), rect.right_center() + vec2(-12.0, 9.0), Align2::RIGHT_CENTER, &label, 12.5, accent());
                     }
                     if r.clicked() {
                         run = Some(h.id);
@@ -451,42 +476,168 @@ impl App {
             }
         }
         let mut open = true;
-        egui::Window::new("Settings").collapsible(false).resizable(true).default_size(vec2(660.0, 560.0)).default_pos(compat::centered_pos(ctx, vec2(660.0, 560.0))).show(ctx, |ui| {
-            ui.set_min_width(620.0);
-            ui.horizontal(|ui| {
-                for (t, name, tip) in [
-                    (SettingsTab::Interface, "Interface", "Scale, comfort and accessibility"),
-                    (SettingsTab::Viewport, "Viewport", "Drawing quality, threads and the render preview window"),
-                    (SettingsTab::Files, "Files", "Autosave, recovery and recent files"),
-                    (SettingsTab::Shortcuts, "Shortcuts", "Change the keyboard shortcut of any command"),
-                ] {
-                    if Btn::new(name).on(st.tab == t).accent(ACCENT).tip(tip).size(vec2(120.0, 30.0)).show(ui).clicked() {
-                        st.tab = t;
+        // New spacing or text sizes make egui re-measure the window, which can throw it to a screen
+        // edge; for a few frames after such a change it is put back in the centre.
+        if st.look_epoch != self.hk.look_epoch {
+            st.look_epoch = self.hk.look_epoch;
+            st.recenter = 3;
+        }
+        let size = vec2(760.0, 560.0);
+        let mut win = egui::Window::new("Settings").collapsible(false).resizable(false).fixed_size(vec2(740.0, 520.0)).default_pos(compat::centered_pos(ctx, size));
+        if st.recenter > 0 {
+            st.recenter -= 1;
+            win = win.current_pos(compat::centered_pos(ctx, size));
+            ctx.request_repaint();
+        }
+        win.show(ctx, |ui| {
+            ui.horizontal_top(|ui| {
+                // Obsidian-style navigation column
+                ui.allocate_ui_with_layout(vec2(168.0, 470.0), egui::Layout::top_down(egui::Align::Min), |ui| {
+                    ui.spacing_mut().item_spacing.y = 1.0;
+                    ui.label(egui::RichText::new("OPTIONS").size(10.5).color(DIM).family(egui::FontFamily::Name("strong".into())));
+                    ui.add_space(2.0);
+                    for (t, icon, name, tip) in [
+                        (SettingsTab::Appearance, Icon::Palette, "Appearance", "Accent colour, density, text size, toolbar and status bar"),
+                        (SettingsTab::Interface, Icon::Monitor, "Interface", "Scale, comfort and accessibility"),
+                        (SettingsTab::Viewport, Icon::Cube, "Viewport", "Drawing quality, shadows, navigation and the render preview window"),
+                        (SettingsTab::Canvas, Icon::Onion, "Canvas & animation", "Pixel grid of the texture editor and onion-skin strength"),
+                        (SettingsTab::Files, Icon::Folder, "Files", "Autosave, recovery and recent files"),
+                        (SettingsTab::Shortcuts, Icon::Keyboard, "Hotkeys", "Change the keyboard shortcut of any command"),
+                    ] {
+                        if crate::widgets::nav_item(ui, icon, name, st.tab == t, tip).clicked() {
+                            st.tab = t;
+                        }
                     }
-                }
+                    // the build sits at the foot of the column (fixed offset: the window has a fixed size)
+                    ui.add_space(470.0 - 24.0 - 6.0 * 29.0 - 22.0);
+                    ui.label(egui::RichText::new(format!("Jank! {}", crate::appinfo::version_string())).size(11.0).color(alpha(DIM, 170)));
+                });
+                let (r, _) = ui.allocate_exact_size(vec2(1.0, 470.0), egui::Sense::hover());
+                ui.painter().rect_filled(r, compat::cr(0.0), LINE_SOFT);
+                ui.vertical(|ui| {
+                    egui::ScrollArea::vertical().id_salt("settings-body").max_height(430.0).auto_shrink([false, false]).show(ui, |ui| match st.tab {
+                        SettingsTab::Appearance => self.settings_appearance(ui),
+                        SettingsTab::Interface => self.settings_interface(ui, &mut st),
+                        SettingsTab::Viewport => self.settings_viewport(ui),
+                        SettingsTab::Canvas => self.settings_canvas(ui),
+                        SettingsTab::Files => self.settings_files(ui),
+                        SettingsTab::Shortcuts => self.settings_shortcuts(ui, &mut st),
+                    });
+                    ui.add_space(6.0);
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        if Btn::new("Done").accent(accent()).on(true).size(vec2(110.0, 32.0)).tip("Close the settings (Esc). Changes are already saved").show(ui).clicked() {
+                            open = false;
+                        }
+                        dim(ui, "Changes apply at once and are saved automatically.");
+                    });
+                });
             });
-            ui.separator();
-            egui::ScrollArea::vertical().max_height(430.0).auto_shrink([false, false]).show(ui, |ui| match st.tab {
-                SettingsTab::Interface => self.settings_interface(ui, &mut st),
-                SettingsTab::Viewport => self.settings_viewport(ui),
-                SettingsTab::Files => self.settings_files(ui),
-                SettingsTab::Shortcuts => self.settings_shortcuts(ui, &mut st),
-            });
-            ui.add_space(6.0);
-            if Btn::new("Close").size(vec2(ui.available_width(), 34.0)).tip("Close the settings (Esc). Changes are already saved").show(ui).clicked() {
-                open = false;
-            }
         });
         open.then_some(Dialog::Settings(st))
     }
 
+    /// One row of buttons for a [`settings::Choice`]; returns true when the value changed.
+    fn choice_row<T: settings::Choice>(&mut self, ui: &mut egui::Ui, v: &mut T, tip: &str) -> bool {
+        let mut changed = false;
+        ui.horizontal_wrapped(|ui| {
+            for &c in T::ALL {
+                if Btn::new(c.label()).accent(accent()).on(*v == c).tip(tip).show(ui).clicked() && *v != c {
+                    *v = c;
+                    changed = true;
+                }
+            }
+        });
+        if changed {
+            self.touch_settings();
+        }
+        changed
+    }
+
+    fn settings_appearance(&mut self, ui: &mut egui::Ui) {
+        use psxcore::settings::{Accent, Choice};
+        section(ui, "Accent colour", accent(), |ui| {
+            dim(ui, "The one colour that marks the active mode, tool, tab and selection.");
+            ui.horizontal(|ui| {
+                for a in Accent::ALL {
+                    let [r, g, b] = a.rgb();
+                    let (rect, resp) = ui.allocate_exact_size(vec2(30.0, 30.0), egui::Sense::click());
+                    let p = ui.painter();
+                    let on = self.settings.accent == *a;
+                    p.rect_filled(rect.shrink(4.0), compat::cr(RADIUS + 1.0), Color32::from_rgb(r, g, b));
+                    if on || resp.hovered() {
+                        compat::stroke_rect(p, rect.shrink(1.0), RADIUS + 3.0, compat::stroke(if on { 2.0 } else { 1.0 }, if on { Color32::WHITE } else { DIM }));
+                    }
+                    if crate::widgets::with_tip(resp, a.label()).clicked() {
+                        self.settings.accent = *a;
+                        self.touch_settings();
+                    }
+                }
+                ui.add_space(6.0);
+                dim(ui, self.settings.accent.label());
+            });
+        });
+        section(ui, "Density and text", accent(), |ui| {
+            dim(ui, "Compact fits more controls on small screens; Comfortable adds breathing room. Text size is independent of the interface scale.");
+            let mut d = self.settings.density;
+            if self.choice_row(ui, &mut d, "Spacing of the controls") {
+                self.settings.density = d;
+            }
+            let mut t = self.settings.text_size;
+            if self.choice_row(ui, &mut t, "Size of the interface text") {
+                self.settings.text_size = t;
+            }
+        });
+        section(ui, "Workspace", accent(), |ui| {
+            let mut v = self.settings.show_toolbar;
+            if toggle_tip(ui, &mut v, "Tool strip next to the viewport", accent(), "The column of pixel-icon tools between the panels and the 3D view").clicked() {
+                self.settings.show_toolbar = v;
+                self.touch_settings();
+            }
+            let mut v = self.settings.show_status_bar;
+            if toggle_tip(ui, &mut v, "Status bar", accent(), "The line at the bottom with messages, the selection and the build").clicked() {
+                self.settings.show_status_bar = v;
+                self.touch_settings();
+            }
+            let mut v = self.settings.status_fps;
+            if toggle_tip(ui, &mut v, "Frame rate in the status bar", accent(), "Frames per second and the viewport drawing time").clicked() {
+                self.settings.status_fps = v;
+                self.touch_settings();
+            }
+        });
+    }
+
+    fn settings_canvas(&mut self, ui: &mut egui::Ui) {
+        section(ui, "Texture editor", accent(), |ui| {
+            let mut v = self.settings.pixel_grid;
+            if toggle_tip(ui, &mut v, "Pixel grid when zoomed in", accent(), "Thin lines between texture pixels from 800% zoom").clicked() {
+                self.settings.pixel_grid = v;
+                self.touch_settings();
+            }
+        });
+        section(ui, "Onion skin", accent(), |ui| {
+            dim(ui, "Strength of the ghosts of the previous (warm) and next (green) frame in Animate mode.");
+            let mut o = self.settings.onion_opacity;
+            if crate::widgets::slider_f_tip(ui, "strength", &mut o, 0.1..=1.0, "How visible the neighbouring frames are") {
+                self.settings.onion_opacity = o;
+                self.touch_settings();
+            }
+        });
+        section(ui, "Composition guides", accent(), |ui| {
+            dim(ui, "Lines over the view in Render mode to help framing the shot. Also on the tool strip.");
+            let mut g = self.settings.guides;
+            if self.choice_row(ui, &mut g, "Composition guide") {
+                self.settings.guides = g;
+            }
+        });
+    }
+
     fn settings_interface(&mut self, ui: &mut egui::Ui, st: &mut SettingsState) {
-        section(ui, "Interface scale", ACCENT, |ui| {
+        section(ui, "Interface scale", accent(), |ui| {
             dim(ui, "Makes every control larger or smaller. Choose a preset or drag the slider and press Apply. Large scales need a large window or screen.");
             ui.horizontal(|ui| {
                 for (label, v) in [("75%", 0.75f32), ("100%", 1.0), ("125%", 1.25), ("150%", 1.5), ("175%", 1.75), ("200%", 2.0)] {
                     let on = (self.settings.ui_scale - v).abs() < 0.01;
-                    if Btn::new(label).on(on).accent(ACCENT).size(vec2(64.0, 30.0)).tip("Set the interface scale").show(ui).clicked() {
+                    if Btn::new(label).on(on).accent(accent()).size(vec2(64.0, 30.0)).tip("Set the interface scale").show(ui).clicked() {
                         self.settings.ui_scale = v;
                         st.scale_edit = v;
                         self.touch_settings();
@@ -495,20 +646,20 @@ impl App {
             });
             ui.horizontal(|ui| {
                 crate::widgets::with_tip(ui.add(egui::Slider::new(&mut st.scale_edit, UI_SCALE_MIN..=UI_SCALE_MAX).fixed_decimals(2).text("scale")), "Drag to choose a scale, then press Apply");
-                if Btn::new("Apply").accent(ACCENT).size(vec2(80.0, 30.0)).tip("Use the scale chosen with the slider").show(ui).clicked() {
+                if Btn::new("Apply").accent(accent()).size(vec2(80.0, 30.0)).tip("Use the scale chosen with the slider").show(ui).clicked() {
                     self.settings.ui_scale = st.scale_edit;
                     self.touch_settings();
                 }
             });
         });
-        section(ui, "Comfort and accessibility", ACCENT, |ui| {
+        section(ui, "Comfort and accessibility", accent(), |ui| {
             let mut v = self.settings.show_tooltips;
-            if toggle_tip(ui, &mut v, "Show tooltips", ACCENT, "Explain a control when the pointer rests on it").clicked() {
+            if toggle_tip(ui, &mut v, "Show tooltips", accent(), "Explain a control when the pointer rests on it").clicked() {
                 self.settings.show_tooltips = v;
                 self.touch_settings();
             }
             let mut v = self.settings.reduce_motion;
-            if toggle_tip(ui, &mut v, "Reduce motion", ACCENT, "Stop buttons from tilting and growing, and shorten animated switches").clicked() {
+            if toggle_tip(ui, &mut v, "Reduce motion", accent(), "Turn off hover fades and shorten animated switches").clicked() {
                 self.settings.reduce_motion = v;
                 self.touch_settings();
             }
@@ -525,18 +676,48 @@ impl App {
 
     fn settings_viewport(&mut self, ui: &mut egui::Ui) {
         use psxcore::settings::{Corner, ViewportQuality, PREVIEW_WIDTH_MAX, PREVIEW_WIDTH_MIN};
-        section(ui, "Viewport sharpness", ACCENT, |ui| {
+        section(ui, "Viewport sharpness", accent(), |ui| {
             dim(ui, "How sharp the 3D view is drawn compared with its size on screen. Auto lowers sharpness only while the frame rate would drop, and raises it back when there is time to spare. The final render is never affected.");
             ui.horizontal_wrapped(|ui| {
                 for q in ViewportQuality::ALL {
-                    if Btn::new(q.label()).accent(ACCENT).on(self.settings.viewport_quality == q).size(vec2(64.0, 30.0)).tip("Viewport sharpness").show(ui).clicked() {
+                    if Btn::new(q.label()).accent(accent()).on(self.settings.viewport_quality == q).size(vec2(64.0, 30.0)).tip("Viewport sharpness").show(ui).clicked() {
                         self.settings.viewport_quality = q;
                         self.touch_settings();
                     }
                 }
             });
         });
-        section(ui, "Processor use", ACCENT, |ui| {
+        section(ui, "Viewport shadows", accent(), |ui| {
+            dim(ui, "Shadows in the editing view only. Lower settings keep the view smooth on slow computers; the final render, the export and the preview window always use the scene's own shadows.");
+            let mut v = self.settings.viewport_shadows;
+            if self.choice_row(ui, &mut v, "Shadow quality of the editing view") {
+                self.settings.viewport_shadows = v;
+            }
+            let mut v = self.settings.lazy_redraw;
+            if toggle_tip(ui, &mut v, "Redraw the view only when something changes", accent(), "Saves processor time while you hover panels or read tooltips. Turn off to draw every frame").clicked() {
+                self.settings.lazy_redraw = v;
+                self.touch_settings();
+            }
+        });
+        section(ui, "Navigation", accent(), |ui| {
+            dim(ui, "Orbit with the middle or right button (or Alt + left), pan with Shift, zoom with the wheel.");
+            let mut o = self.settings.orbit_speed;
+            if crate::widgets::slider_f_tip(ui, "orbit speed", &mut o, settings::SPEED_MIN..=settings::SPEED_MAX, "How fast the view turns while dragging") {
+                self.settings.orbit_speed = o;
+                self.touch_settings();
+            }
+            let mut z = self.settings.zoom_speed;
+            if crate::widgets::slider_f_tip(ui, "zoom speed", &mut z, settings::SPEED_MIN..=settings::SPEED_MAX, "How far one wheel step zooms") {
+                self.settings.zoom_speed = z;
+                self.touch_settings();
+            }
+            let mut v = self.settings.invert_orbit_y;
+            if toggle_tip(ui, &mut v, "Invert vertical orbit", accent(), "Dragging up tilts the view down instead of up").clicked() {
+                self.settings.invert_orbit_y = v;
+                self.touch_settings();
+            }
+        });
+        section(ui, "Processor use", accent(), |ui| {
             dim(ui, "Number of threads the software renderer may use. 0 means automatic (all cores but one). Lower it on a weak or busy computer.");
             let mut t = self.settings.render_threads;
             if crate::widgets::slider_u_tip(ui, "render threads (0 = auto)", &mut t, 0..=32, "How many threads draw the 3D view") {
@@ -544,18 +725,18 @@ impl App {
                 self.touch_settings();
             }
             let mut v = self.settings.show_stats;
-            if toggle_tip(ui, &mut v, "Show frame statistics (F3)", ACCENT, "Frame rate, drawing time and viewport size in a corner of the 3D view").clicked() {
+            if toggle_tip(ui, &mut v, "Show frame statistics (F3)", accent(), "Frame rate, drawing time and viewport size in a corner of the 3D view").clicked() {
                 self.settings.show_stats = v;
                 self.touch_settings();
             }
         });
-        section(ui, "Render preview window", ACCENT, |ui| {
+        section(ui, "Render preview window", accent(), |ui| {
             dim(ui, "A small window with the real render at the chosen resolution. Drag its header to move it between corners; drag the corner grip to resize.");
             let mut pv = self.settings.preview;
-            let mut ch = toggle_tip(ui, &mut pv.visible, "Show the preview window (Shift+P)", ACCENT, "Show or hide the preview").clicked();
+            let mut ch = toggle_tip(ui, &mut pv.visible, "Show the preview window (Shift+P)", accent(), "Show or hide the preview").clicked();
             ui.horizontal_wrapped(|ui| {
                 for (c, l) in [(Corner::TopLeft, "Top left"), (Corner::TopRight, "Top right"), (Corner::BottomLeft, "Bottom left"), (Corner::BottomRight, "Bottom right")] {
-                    if Btn::new(l).accent(ACCENT).on(pv.corner == c).tip("Corner of the viewport").show(ui).clicked() {
+                    if Btn::new(l).accent(accent()).on(pv.corner == c).tip("Corner of the viewport").show(ui).clicked() {
                         pv.corner = c;
                         ch = true;
                     }
@@ -570,10 +751,10 @@ impl App {
     }
 
     fn settings_files(&mut self, ui: &mut egui::Ui) {
-        section(ui, "Autosave and recovery", ACCENT, |ui| {
+        section(ui, "Autosave and recovery", accent(), |ui| {
             dim(ui, "While a project has unsaved changes, Jank! keeps a snapshot. After a crash or power loss it offers to restore it at the next start.");
             let mut v = self.settings.autosave_enabled;
-            if toggle_tip(ui, &mut v, "Autosave snapshots", ACCENT, "Periodically store a recovery snapshot of unsaved work").clicked() {
+            if toggle_tip(ui, &mut v, "Autosave snapshots", accent(), "Periodically store a recovery snapshot of unsaved work").clicked() {
                 self.settings.autosave_enabled = v;
                 self.touch_settings();
             }
@@ -586,7 +767,7 @@ impl App {
                 dim(ui, &format!("Snapshot folder: {}", d.display()));
             }
         });
-        section(ui, "Where settings are stored", ACCENT, |ui| {
+        section(ui, "Where settings are stored", accent(), |ui| {
             match settings::settings_path() {
                 Some(p) => dim(ui, &format!("{}", p.display())),
                 None => dim(ui, "No configuration folder was found; settings last only for this session."),
@@ -624,7 +805,7 @@ impl App {
             if rows.is_empty() {
                 continue;
             }
-            section(ui, cat.title(), ACCENT, |ui| {
+            section(ui, cat.title(), accent(), |ui| {
                 for id in rows {
                     ui.horizontal(|ui| {
                         ui.allocate_ui(vec2(210.0, 28.0), |ui| {
@@ -640,7 +821,7 @@ impl App {
                         } else {
                             chords.iter().map(|c| c.to_string()).collect::<Vec<_>>().join("   or   ")
                         };
-                        let col = if capturing { WARN } else if chords.is_empty() { DIM } else { ACCENT };
+                        let col = if capturing { WARN } else if chords.is_empty() { DIM } else { accent() };
                         ui.allocate_ui(vec2(250.0, 28.0), |ui| {
                             ui.set_min_size(vec2(250.0, 28.0));
                             ui.label(egui::RichText::new(text).size(13.5).color(col));

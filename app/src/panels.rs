@@ -47,11 +47,11 @@ pub enum RightTab {
 /// Render resolution and the retro look of the final picture.
 pub fn look_editor(ui: &mut Ui, s: &mut PsxStyle) -> bool {
     let mut ch = false;
-    section(ui, "Render resolution", ACCENT, |ui| {
+    section(ui, "Render resolution", accent(), |ui| {
         ui.horizontal_wrapped(|ui| {
             for (w, h) in [(160u32, 120u32), (256, 224), (320, 240), (384, 216), (512, 384), (640, 480), (1280, 720)] {
                 let l = format!("{w}×{h}");
-                if Btn::new(&l).accent(ACCENT).on(s.width == w && s.height == h).size(vec2(24.0 + l.chars().count() as f32 * 7.2, 28.0)).show(ui).clicked() {
+                if Btn::new(&l).accent(accent()).on(s.width == w && s.height == h).size(vec2(24.0 + l.chars().count() as f32 * 7.2, 28.0)).show(ui).clicked() {
                     s.width = w;
                     s.height = h;
                     ch = true;
@@ -61,14 +61,14 @@ pub fn look_editor(ui: &mut Ui, s: &mut PsxStyle) -> bool {
         ch |= slider_u(ui, "width", &mut s.width, 64..=1920);
         ch |= slider_u(ui, "height", &mut s.height, 48..=1080);
     });
-    section(ui, "Retro rendering", ACCENT, |ui| {
-        ch |= toggle(ui, &mut s.affine, "Affine textures (wobble)", ACCENT).clicked();
-        ch |= toggle(ui, &mut s.dither, "Dithering", ACCENT).clicked();
-        ch |= toggle(ui, &mut s.z_buffer, "Z-buffer (off = PS1 painter's order)", ACCENT).clicked();
+    section(ui, "Retro rendering", accent(), |ui| {
+        ch |= toggle(ui, &mut s.affine, "Affine textures (wobble)", accent()).clicked();
+        ch |= toggle(ui, &mut s.dither, "Dithering", accent()).clicked();
+        ch |= toggle(ui, &mut s.z_buffer, "Z-buffer (off = PS1 painter's order)", accent()).clicked();
         ch |= slider_f(ui, "vertex snap", &mut s.snap, 0.0..=4.0);
         ch |= slider_u(ui, "colour bits", &mut s.color_bits, 1..=8);
     });
-    section(ui, "Mood", ACCENT, |ui| {
+    section(ui, "Mood", accent(), |ui| {
         ch |= rgb_edit(ui, "tint", &mut s.tint);
         ch |= slider_f(ui, "saturation", &mut s.saturation, 0.0..=2.0);
         ch |= slider_f(ui, "contrast", &mut s.contrast, 0.3..=2.0);
@@ -86,8 +86,8 @@ pub fn look_editor(ui: &mut Ui, s: &mut PsxStyle) -> bool {
 pub fn lighting_editor(ui: &mut Ui, l: &mut psxcore::lighting::Lighting) -> bool {
     use psxcore::lighting::{daylight, ShadowMode, ShadowQuality};
     let mut ch = false;
-    section(ui, "Time of day", ACCENT, |ui| {
-        ch |= toggle_tip(ui, &mut l.tod_on, "Sun and moon", ACCENT, "Light direction and colour, ambient light, sky and fog follow the hour. The sun crosses the sky from 06:00 to 18:00, the moon from 18:00 to 06:00").clicked();
+    section(ui, "Time of day", accent(), |ui| {
+        ch |= toggle_tip(ui, &mut l.tod_on, "Sun and moon", accent(), "Light direction and colour, ambient light, sky and fog follow the hour. The sun crosses the sky from 06:00 to 18:00, the moon from 18:00 to 06:00").clicked();
         if l.tod_on {
             let hh = l.time.floor() as u32 % 24;
             let mm = ((l.time - l.time.floor()) * 60.0) as u32 % 60;
@@ -97,7 +97,7 @@ pub fn lighting_editor(ui: &mut Ui, l: &mut psxcore::lighting::Lighting) -> bool
             ch |= slider_f_tip(ui, "direction", &mut l.azimuth, 0.0..=360.0, "Compass direction the sun and moon travel along, in degrees");
         }
     });
-    section(ui, "Shadows", ACCENT, |ui| {
+    section(ui, "Shadows", accent(), |ui| {
         ui.horizontal_wrapped(|ui| {
             for m in ShadowMode::ALL {
                 let tip = match m {
@@ -105,7 +105,7 @@ pub fn lighting_editor(ui: &mut Ui, l: &mut psxcore::lighting::Lighting) -> bool
                     ShadowMode::Blob => "A soft round spot behind every object. Cheap and very PS1",
                     ShadowMode::Projected => "The real shape of every object, on any surface. Cut-out textures such as wings and leaves cast cut-out shadows",
                 };
-                if Btn::new(m.label()).accent(ACCENT).on(l.shadows == m).tip(tip).show(ui).clicked() {
+                if Btn::new(m.label()).accent(accent()).on(l.shadows == m).tip(tip).show(ui).clicked() {
                     l.shadows = m;
                     ch = true;
                 }
@@ -118,7 +118,7 @@ pub fn lighting_editor(ui: &mut Ui, l: &mut psxcore::lighting::Lighting) -> bool
                 ui.horizontal_wrapped(|ui| {
                     for q in ShadowQuality::ALL {
                         let tip = format!("Shadow map of {0}x{0} texels. Sharper edges cost more time and memory", q.resolution());
-                        if Btn::new(q.label()).accent(ACCENT).on(l.quality == q).tip(&tip).show(ui).clicked() {
+                        if Btn::new(q.label()).accent(accent()).on(l.quality == q).tip(&tip).show(ui).clicked() {
                             l.quality = q;
                             ch = true;
                         }
@@ -134,17 +134,17 @@ pub fn lighting_editor(ui: &mut Ui, l: &mut psxcore::lighting::Lighting) -> bool
 /// Sky, fog and light of the world.
 pub fn world_editor(ui: &mut Ui, s: &mut PsxStyle) -> bool {
     let mut ch = false;
-    section(ui, "Sky", ACCENT, |ui| {
+    section(ui, "Sky", accent(), |ui| {
         ch |= rgb_edit(ui, "sky top", &mut s.bg_top);
         ch |= rgb_edit(ui, "sky bottom", &mut s.bg_bottom);
     });
-    section(ui, "Fog", ACCENT, |ui| {
-        ch |= toggle(ui, &mut s.fog_on, "Fog", ACCENT).clicked();
+    section(ui, "Fog", accent(), |ui| {
+        ch |= toggle(ui, &mut s.fog_on, "Fog", accent()).clicked();
         ch |= slider_f(ui, "fog start", &mut s.fog_near, 0.0..=60.0);
         ch |= slider_f(ui, "fog end", &mut s.fog_far, 1.0..=120.0);
         ch |= rgb_edit(ui, "fog colour", &mut s.fog_color);
     });
-    section(ui, "Light", ACCENT, |ui| {
+    section(ui, "Light", accent(), |ui| {
         ch |= rgb_edit(ui, "ambient light", &mut s.ambient);
         ch |= rgb_edit(ui, "light", &mut s.light_color);
     });
@@ -153,7 +153,9 @@ pub fn world_editor(ui: &mut Ui, s: &mut PsxStyle) -> bool {
 
 /// Brushes and colour: shared by the Texture and Animate modes.
 fn paint_tools(app: &mut App, ui: &mut Ui, accent: Color32, layers: bool) {
+    let strip = app.settings.show_toolbar;
     section(ui, "Brush", accent, |ui| {
+        if !strip {
         ui.horizontal_wrapped(|ui| {
             for (t, icon, tip) in [
                 (Tool::Brush, Icon::Brush, "Brush"),
@@ -170,6 +172,7 @@ fn paint_tools(app: &mut App, ui: &mut Ui, accent: Color32, layers: bool) {
                 }
             }
         });
+        }
         let mut b = app.ed.brush;
         toggle(ui, &mut b.pixel, "Pixel brush", accent);
         slider_f(ui, "size", &mut b.size, 1.0..=64.0);
@@ -192,6 +195,50 @@ fn paint_tools(app: &mut App, ui: &mut Ui, accent: Color32, layers: bool) {
     app.palette_section(ui, accent);
 }
 
+/// One-line description under the mode name in the left pane header.
+fn mode_hint(m: Mode) -> &'static str {
+    match m {
+        Mode::Model => "shape low-poly meshes",
+        Mode::Texture => "paint pixels on the model",
+        Mode::Pose => "bend the skeleton",
+        Mode::Animate => "frames, drawing, emotions",
+        Mode::Render => "camera and final picture",
+    }
+}
+
+/// Icon for an object row in the scene list, guessed from its name.
+fn object_icon(name: &str) -> Icon {
+    let n = name.to_ascii_lowercase();
+    if n.contains("butterfly") {
+        Icon::Butterfly
+    } else if n.contains("sphere") || n.contains("ball") {
+        Icon::Sphere
+    } else if n.contains("plane") || n.contains("meadow") || n.contains("ground") || n.contains("floor") {
+        Icon::Plane
+    } else if n.contains("cylinder") || n.contains("trunk") {
+        Icon::Cylinder
+    } else if n.contains("cone") || n.contains("pine") || n.contains("tree") {
+        Icon::Cone
+    } else if n.contains("torus") || n.contains("ring") {
+        Icon::Torus
+    } else {
+        Icon::Cube
+    }
+}
+
+/// Obsidian-style pane header: the mode icon in the accent colour, the mode name and a dim caption.
+fn pane_header(ui: &mut Ui, icon: Icon, title: &str, hint: &str) {
+    let (rect, _) = ui.allocate_exact_size(vec2(ui.available_width(), 30.0), egui::Sense::hover());
+    let p = ui.painter();
+    crate::icons::draw(p, icon, egui::pos2(rect.min.x + 9.0, rect.center().y), 16.0, accent());
+    let font = egui::FontId::new(13.5, egui::FontFamily::Name("strong".into()));
+    let g = p.layout_no_wrap(title.to_string(), font, TEXT);
+    let tw = g.size().x;
+    p.galley(egui::pos2(rect.min.x + 24.0, rect.center().y - g.size().y * 0.5), g, TEXT);
+    compat::text(p, egui::pos2(rect.min.x + 32.0 + tw, rect.center().y + 0.5), egui::Align2::LEFT_CENTER, hint, 11.5, DIM);
+    p.line_segment([egui::pos2(rect.min.x - 10.0, rect.max.y), egui::pos2(rect.max.x + 10.0, rect.max.y)], compat::stroke(1.0, LINE_SOFT));
+}
+
 impl App {
     pub fn left_panel(&mut self, ctx: &Context) {
         let mut panel = SidePanel::left("left").resizable(true).default_width(self.settings.layout.left_width).width_range(210.0..=380.0).frame(compat::frame(BG1, 10.0));
@@ -199,11 +246,12 @@ impl App {
             panel = panel.exact_width(self.settings.layout.left_width);
         }
         let shown = panel.show(ctx, |ui| {
+            pane_header(ui, crate::mode_icon(self.ed.mode), crate::mode_label(self.ed.mode), mode_hint(self.ed.mode));
             ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| match self.ed.mode {
                 Mode::Model => self.model_tools(ui),
                 Mode::Texture => {
-                    self.canvas_target_section(ui, ACCENT);
-                    paint_tools(self, ui, ACCENT, true)
+                    self.canvas_target_section(ui, accent());
+                    paint_tools(self, ui, accent(), true)
                 }
                 Mode::Pose => self.pose_tools(ui),
                 Mode::Animate => self.anim_tools(ui),
@@ -214,36 +262,41 @@ impl App {
     }
 
     fn model_tools(&mut self, ui: &mut Ui) {
-        section(ui, "Add", ACCENT, |ui| {
+        section(ui, "Add", accent(), |ui| {
             ui.horizontal_wrapped(|ui| {
                 for (p, icon, tip) in [(Primitive::Cube, Icon::Cube, "Cube"), (Primitive::Plane, Icon::Plane, "Plane"), (Primitive::Cylinder, Icon::Cylinder, "Cylinder"), (Primitive::Cone, Icon::Cone, "Cone"), (Primitive::Sphere, Icon::Sphere, "Sphere"), (Primitive::Torus, Icon::Torus, "Torus"), (Primitive::Butterfly, Icon::Butterfly, "Butterfly: a ready-made model with a transparent texture")] {
-                    if Btn::new("").icon(icon).accent(ACCENT).tip(tip).show(ui).clicked() {
+                    if Btn::new("").icon(icon).accent(accent()).tip(tip).show(ui).clicked() {
                         self.ed.add_primitive(p);
                     }
                 }
             });
-            if Btn::new("Import model").icon(Icon::Open).accent(ACCENT).size(vec2(ui.available_width(), 34.0)).show(ui).clicked() {
+            if Btn::new("Import model").icon(Icon::Open).accent(accent()).size(vec2(ui.available_width(), 34.0)).show(ui).clicked() {
                 self.dialog = Some(dialogs::browser(dialogs::Purpose::ImportModel));
             }
         });
-        section(ui, "Mouse tool", ACCENT, |ui| {
+        let strip = self.settings.show_toolbar;
+        section(ui, "Mouse tool", accent(), |ui| {
+            if strip {
+                dim(ui, if self.model_tool == ModelTool::Select { "Select: click a face, Shift adds. Tools are in the strip next to the view." } else { "Sculpt: drag a vertex to push and pull the surface." });
+            } else {
             ui.horizontal(|ui| {
-                if Btn::new("Select").icon(Icon::Select).accent(ACCENT).on(self.model_tool == ModelTool::Select).tip("Click a face to select it; Shift adds to the selection").show(ui).clicked() {
+                if Btn::new("Select").icon(Icon::Select).accent(accent()).on(self.model_tool == ModelTool::Select).tip("Click a face to select it; Shift adds to the selection").show(ui).clicked() {
                     self.model_tool = ModelTool::Select;
                 }
-                if Btn::new("Sculpt").icon(Icon::Sculpt).accent(ACCENT).on(self.model_tool == ModelTool::Sculpt).tip("Drag a vertex to push and pull the surface").show(ui).clicked() {
+                if Btn::new("Sculpt").icon(Icon::Sculpt).accent(accent()).on(self.model_tool == ModelTool::Sculpt).tip("Drag a vertex to push and pull the surface").show(ui).clicked() {
                     self.model_tool = ModelTool::Sculpt;
                 }
             });
+            }
             if self.model_tool == ModelTool::Sculpt {
                 slider_f(ui, "radius", &mut self.sculpt_radius, 0.05..=3.0);
             }
         });
         let nf = self.ed.selected_faces.len();
-        section(ui, &format!("Faces ({nf})"), ACCENT, |ui| {
+        section(ui, &format!("Faces ({nf})"), accent(), |ui| {
             ui.horizontal(|ui| {
                 ui.add(egui::DragValue::new(&mut self.extrude_dist).speed(0.01).range(-5.0..=5.0));
-                if Btn::new("Extrude").icon(Icon::Plus).accent(ACCENT).enabled(nf > 0).tip("Pull the selected faces out; a negative distance pushes them in").show(ui).clicked() {
+                if Btn::new("Extrude").icon(Icon::Plus).accent(accent()).enabled(nf > 0).tip("Pull the selected faces out; a negative distance pushes them in").show(ui).clicked() {
                     self.ed.extrude_selected_faces(self.extrude_dist);
                 }
             });
@@ -253,7 +306,7 @@ impl App {
             });
             ui.horizontal_wrapped(|ui| {
                 let n = self.nudge;
-                for (l, d, c) in [("X−", Vec3::new(-n, 0.0, 0.0), ACCENT), ("X+", Vec3::new(n, 0.0, 0.0), ACCENT), ("Y−", Vec3::new(0.0, -n, 0.0), ACCENT), ("Y+", Vec3::new(0.0, n, 0.0), ACCENT), ("Z−", Vec3::new(0.0, 0.0, -n), ACCENT), ("Z+", Vec3::new(0.0, 0.0, n), ACCENT)] {
+                for (l, d, c) in [("X−", Vec3::new(-n, 0.0, 0.0), accent()), ("X+", Vec3::new(n, 0.0, 0.0), accent()), ("Y−", Vec3::new(0.0, -n, 0.0), accent()), ("Y+", Vec3::new(0.0, n, 0.0), accent()), ("Z−", Vec3::new(0.0, 0.0, -n), accent()), ("Z+", Vec3::new(0.0, 0.0, n), accent())] {
                     if Btn::new(l).accent(c).enabled(nf > 0).size(vec2(40.0, 30.0)).show(ui).clicked() {
                         self.ed.move_selected_faces(d);
                     }
@@ -263,7 +316,7 @@ impl App {
                 self.ed.delete_selected_faces();
             }
         });
-        section(ui, "Model shape", ACCENT, |ui| {
+        section(ui, "Model shape", accent(), |ui| {
             ui.horizontal_wrapped(|ui| {
                 if Btn::new("Subdivide").tip("Splits every triangle into 4").show(ui).clicked() {
                     self.ed.subdivide_selected();
@@ -282,12 +335,12 @@ impl App {
                 }
             });
         });
-        section(ui, "Reduce polygons", ACCENT, |ui| {
+        section(ui, "Reduce polygons", accent(), |ui| {
             let now = self.ed.selected_model().map_or(0, |m| m.triangle_count());
             dim(ui, &format!("Now: {now} triangles"));
             slider_f(ui, "keep", &mut self.decimate_ratio, 0.05..=1.0);
             dim(ui, &format!("about {} triangles", (now as f32 * self.decimate_ratio) as usize));
-            if Btn::new("Simplify").icon(Icon::Scissors).accent(ACCENT).size(vec2(ui.available_width(), 34.0)).tip("Keeps the silhouette and UV seams").show(ui).clicked() {
+            if Btn::new("Simplify").icon(Icon::Scissors).accent(accent()).size(vec2(ui.available_width(), 34.0)).tip("Keeps the silhouette and UV seams").show(ui).clicked() {
                 if let Some((a, b)) = self.ed.decimate_selected(self.decimate_ratio) {
                     self.info(format!("Reduced from {a} to {b} triangles"));
                 }
@@ -301,13 +354,13 @@ impl App {
             return;
         };
         let Some(skel) = model.skeleton.clone() else {
-            section(ui, "Skeleton", ACCENT, |ui| {
+            section(ui, "Skeleton", accent(), |ui| {
                 dim(ui, "This model has no bones.");
                 dim(ui, "Import a model with a skeleton (glTF/GLB) to pose it.");
             });
             return;
         };
-        section(ui, "Bones", ACCENT, |ui| {
+        section(ui, "Bones", accent(), |ui| {
             dim(ui, "Click a joint in the viewport or here. Drag a joint: left/right tilts it sideways, up/down tilts it forward and back.");
             for (i, b) in skel.bones.iter().enumerate() {
                 let mut depth = 0;
@@ -320,16 +373,20 @@ impl App {
                     }
                 }
                 ui.horizontal(|ui| {
-                    ui.add_space(depth as f32 * 12.0);
-                    let w = (ui.available_width() - 4.0).max(60.0);
-                    if Btn::new(&b.name).accent(ACCENT).on(self.ed.selected_bone == Some(i)).size(vec2(w, 26.0)).show(ui).clicked() {
+                    ui.spacing_mut().item_spacing.x = 0.0;
+                    let (gap, _) = ui.allocate_exact_size(vec2(depth as f32 * 14.0, 24.0), egui::Sense::hover());
+                    for d in 0..depth {
+                        let x = gap.min.x + 13.0 + d as f32 * 14.0;
+                        ui.painter().line_segment([egui::pos2(x, gap.min.y - 2.0), egui::pos2(x, gap.max.y + 2.0)], compat::stroke(1.0, LINE));
+                    }
+                    if crate::widgets::tree_row(ui, Icon::Bone, &b.name, self.ed.selected_bone == Some(i), None, "Select this bone").row.clicked() {
                         self.ed.selected_bone = Some(i);
                     }
                 });
             }
         });
         if let Some(b) = self.ed.selected_bone {
-            section(ui, "Rotate bone", ACCENT, |ui| {
+            section(ui, "Rotate bone", accent(), |ui| {
                 for (axis, name, c) in [(Vec3::new(1.0, 0.0, 0.0), "X", AXIS_X), (Vec3::new(0.0, 1.0, 0.0), "Y", AXIS_Y), (Vec3::new(0.0, 0.0, 1.0), "Z", AXIS_Z)] {
                     ui.horizontal(|ui| {
                         ui.label(egui::RichText::new(format!("{name} axis")).color(c));
@@ -346,7 +403,7 @@ impl App {
                 }
             });
         }
-        section(ui, "Whole pose", ACCENT, |ui| {
+        section(ui, "Whole pose", accent(), |ui| {
             ui.horizontal_wrapped(|ui| {
                 if Btn::new("Reset").icon(Icon::Undo).show(ui).clicked() {
                     self.ed.reset_pose();
@@ -365,22 +422,24 @@ impl App {
     }
 
     fn anim_tools(&mut self, ui: &mut Ui) {
-        section(ui, "Tool", ACCENT, |ui| {
+        if !self.settings.show_toolbar {
+        section(ui, "Tool", accent(), |ui| {
             ui.horizontal_wrapped(|ui| {
                 for (t, icon, name, tip) in [(AnimTool::Pose, Icon::Bone, "Pose", "Drag joints to pose the model"), (AnimTool::Hand, Icon::Hand, "Draw", "Draw by hand over the frame"), (AnimTool::PaintModel, Icon::Brush, "Paint", "Paint on the model: emotions and per-frame texture changes"), (AnimTool::MoveObject, Icon::Move, "Move", "Drag the object across the screen plane")] {
-                    if Btn::new(name).icon(icon).accent(ACCENT).on(self.anim_tool == t).tip(tip).show(ui).clicked() {
+                    if Btn::new(name).icon(icon).accent(accent()).on(self.anim_tool == t).tip(tip).show(ui).clicked() {
                         self.anim_tool = t;
                     }
                 }
             });
         });
+        }
         match self.anim_tool {
             AnimTool::Pose => self.pose_tools(ui),
             AnimTool::Hand => {
-                paint_tools(self, ui, ACCENT, true);
-                section(ui, "Frame drawing", ACCENT, |ui| {
+                paint_tools(self, ui, accent(), true);
+                section(ui, "Frame drawing", accent(), |ui| {
                     let mut only = self.ed.frame().is_some_and(|f| f.hand_only);
-                    if toggle(ui, &mut only, "Drawing only (hide 3D)", ACCENT).clicked() {
+                    if toggle(ui, &mut only, "Drawing only (hide 3D)", accent()).clicked() {
                         self.ed.set_hand_only(only);
                     }
                     if Btn::new("Clear drawing").icon(Icon::Trash).accent(DANGER).size(vec2(ui.available_width(), 30.0)).show(ui).clicked() {
@@ -389,12 +448,12 @@ impl App {
                 });
             }
             AnimTool::PaintModel => {
-                paint_tools(self, ui, ACCENT, false);
+                paint_tools(self, ui, accent(), false);
                 self.emotions_section(ui);
             }
             AnimTool::MoveObject => dim(ui, "Drag the object with the mouse. Changes apply to the current frame only."),
         }
-        section(ui, "Frame camera", ACCENT, |ui| {
+        section(ui, "Frame camera", accent(), |ui| {
             ui.horizontal_wrapped(|ui| {
                 if Btn::new("View to camera").tip("Stores the current viewport view as this frame's camera").show(ui).clicked() {
                     self.ed.camera_from_view();
@@ -404,12 +463,12 @@ impl App {
                     self.ed.view_from_camera();
                 }
             });
-            toggle(ui, &mut self.ed.through_camera, "Look through the frame camera", ACCENT);
+            toggle(ui, &mut self.ed.through_camera, "Look through the frame camera", accent());
             let mut fov = self.ed.frame().map_or(50.0, |f| f.camera.fov_y.to_degrees());
             if slider_f(ui, "field of view", &mut fov, 10.0..=120.0) {
                 self.cont(|ed| ed.set_frame_fov(fov));
             }
-            toggle(ui, &mut self.ed.onion, "Onion skin (neighbour frames)", ACCENT);
+            toggle(ui, &mut self.ed.onion, "Onion skin (neighbour frames)", accent());
         });
     }
 
@@ -418,14 +477,14 @@ impl App {
         let Some(obj) = self.ed.selected_object else { return };
         let list: Vec<String> = self.ed.project.assets[asset].emotions.iter().map(|e| e.name.clone()).collect();
         let cur = self.ed.frame().and_then(|f| f.states.iter().find(|s| s.object == obj)).and_then(|s| s.emotion);
-        section(ui, "Emotions", ACCENT, |ui| {
+        section(ui, "Emotions", accent(), |ui| {
             if list.is_empty() {
                 dim(ui, "An emotion is a ready-made texture variant (face, eyes). Create the first one from the current texture.");
             }
             for (i, n) in list.iter().enumerate() {
                 ui.horizontal(|ui| {
                     let w = (ui.available_width() - 74.0).max(60.0);
-                    if Btn::new(n).accent(ACCENT).on(cur == Some(i)).size(vec2(w, 28.0)).tip("Use in this frame").show(ui).clicked() {
+                    if Btn::new(n).accent(accent()).on(cur == Some(i)).size(vec2(w, 28.0)).tip("Use in this frame").show(ui).clicked() {
                         self.ed.set_frame_emotion(obj, Some(i));
                         self.ed.active_emotion = Some(i);
                     }
@@ -439,7 +498,7 @@ impl App {
             }
             ui.horizontal(|ui| {
                 ui.add(egui::TextEdit::singleline(&mut self.new_emotion).hint_text("name").desired_width(110.0));
-                if Btn::new("Add").icon(Icon::Plus).accent(ACCENT).show(ui).clicked() {
+                if Btn::new("Add").icon(Icon::Plus).accent(accent()).show(ui).clicked() {
                     let name = if self.new_emotion.trim().is_empty() { format!("Emotion {}", list.len() + 1) } else { self.new_emotion.trim().to_string() };
                     if let Some(i) = self.ed.add_emotion(&name) {
                         self.ed.set_frame_emotion(obj, Some(i));
@@ -455,9 +514,9 @@ impl App {
     }
 
     fn render_tools(&mut self, ui: &mut Ui) {
-        section(ui, "Camera", ACCENT, |ui| {
+        section(ui, "Camera", accent(), |ui| {
             dim(ui, "The final picture is drawn through the frame camera of the current frame. Resolution, look and light are on the right.");
-            toggle(ui, &mut self.ed.through_camera, "Look through the frame camera", ACCENT);
+            toggle(ui, &mut self.ed.through_camera, "Look through the frame camera", accent());
             let mut fov = self.ed.frame().map_or(50.0, |f| f.camera.fov_y.to_degrees());
             if slider_f(ui, "field of view", &mut fov, 10.0..=120.0) {
                 self.cont(|ed| ed.set_frame_fov(fov));
@@ -472,12 +531,12 @@ impl App {
                 }
             });
         });
-        section(ui, "Render preview window", ACCENT, |ui| {
+        section(ui, "Render preview window", accent(), |ui| {
             let mut pv = self.settings.preview;
-            let mut ch = toggle(ui, &mut pv.visible, "Show the preview window", ACCENT).clicked();
+            let mut ch = toggle(ui, &mut pv.visible, "Show the preview window", accent()).clicked();
             ui.horizontal_wrapped(|ui| {
                 for (c, l) in [(psxcore::settings::Corner::TopLeft, "Top left"), (psxcore::settings::Corner::TopRight, "Top right"), (psxcore::settings::Corner::BottomLeft, "Bottom left"), (psxcore::settings::Corner::BottomRight, "Bottom right")] {
-                    if Btn::new(l).accent(ACCENT).on(pv.corner == c).tip("Corner of the viewport").show(ui).clicked() {
+                    if Btn::new(l).accent(accent()).on(pv.corner == c).tip("Corner of the viewport").show(ui).clicked() {
                         pv.corner = c;
                         ch = true;
                     }
@@ -498,18 +557,26 @@ impl App {
         }
         let shown = panel.show(ctx, |ui| {
             ui.horizontal(|ui| {
-                let w = (ui.available_width() - 3.0 * ui.spacing().item_spacing.x) / 4.0;
-                for (t, name, tip) in [
-                    (RightTab::Scene, "Scene", "Objects and their placement"),
-                    (RightTab::Look, "Look", "Render resolution, retro effects and mood"),
-                    (RightTab::World, "World", "Sky, fog and light"),
-                    (RightTab::Output, "Output", "Export pictures and animations"),
+                ui.spacing_mut().item_spacing.x = 2.0;
+                let w = ((ui.available_width() - 6.0) / 4.0).floor();
+                for (t, icon, tip) in [
+                    (RightTab::Scene, Icon::List, "Scene: objects and their placement"),
+                    (RightTab::Look, Icon::Sliders, "Look: render resolution, retro effects and mood"),
+                    (RightTab::World, Icon::Globe, "World: sky, fog and light"),
+                    (RightTab::Output, Icon::Export, "Output: export pictures and animations"),
                 ] {
-                    if Btn::new(name).accent(ACCENT).on(self.right_tab == t).size(vec2(w.max(40.0), 28.0)).tip(tip).show(ui).clicked() {
+                    if crate::widgets::tab(ui, "", Some(icon), self.right_tab == t, tip, w).clicked() {
                         self.right_tab = t;
                     }
                 }
             });
+            let (icon, title, hint) = match self.right_tab {
+                RightTab::Scene => (Icon::List, "Scene", "objects and placement"),
+                RightTab::Look => (Icon::Sliders, "Look", "resolution, retro effects, mood"),
+                RightTab::World => (Icon::Globe, "World", "sky, fog and light"),
+                RightTab::Output => (Icon::Export, "Output", "pictures and animations"),
+            };
+            pane_header(ui, icon, title, hint);
             ui.add_space(4.0);
             ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| match self.right_tab {
                 RightTab::Scene => self.scene_section(ui),
@@ -542,20 +609,20 @@ impl App {
 
     fn scene_section(&mut self, ui: &mut Ui) {
         let objs: Vec<(u32, String, bool)> = self.ed.project.scene.objects.iter().map(|o| (o.id, o.name.clone(), o.visible)).collect();
-        section(ui, "Scene", ACCENT, |ui| {
+        section(ui, "Scene", accent(), |ui| {
             if objs.is_empty() {
                 dim(ui, "Empty. Add a primitive or import a model.");
             }
             for (id, name, vis) in &objs {
-                ui.horizontal(|ui| {
-                    if Btn::new("").icon(if *vis { Icon::Eye } else { Icon::EyeOff }).size(vec2(30.0, 28.0)).tip("Show or hide").show(ui).clicked() {
+                {
+                    let icon = object_icon(name);
+                    let r = crate::widgets::tree_row(ui, icon, name, self.ed.selected_object == Some(*id), Some(*vis), "Select. Right-click for more actions");
+                    if r.eye {
                         self.ed.set_object_visible(*id, !*vis);
-                    }
-                    let w = (ui.available_width() - 4.0).max(60.0);
-                    let row = Btn::new(name).accent(ACCENT).on(self.ed.selected_object == Some(*id)).size(vec2(w, 28.0)).tip("Select. Right-click for more actions").show(ui);
-                    if row.clicked() {
+                    } else if r.row.clicked() {
                         self.ed.select_object(Some(*id));
                     }
+                    let row = r.row;
                     row.context_menu(|ui| {
                         if ui.button("Select").clicked() {
                             self.ed.select_object(Some(*id));
@@ -575,7 +642,7 @@ impl App {
                             ui.close_menu();
                         }
                     });
-                });
+                }
             }
             if let Some(id) = self.ed.selected_object {
                 ui.horizontal(|ui| {
@@ -590,7 +657,7 @@ impl App {
         });
         let Some(id) = self.ed.selected_object else { return };
         let Some(t) = self.ed.object_transform(id) else { return };
-        section(ui, if matches!(self.ed.mode, Mode::Pose | Mode::Animate) { "Placement (this frame)" } else { "Placement" }, ACCENT, |ui| {
+        section(ui, if matches!(self.ed.mode, Mode::Pose | Mode::Animate) { "Placement (this frame)" } else { "Placement" }, accent(), |ui| {
             let mut pos = [t.pos.x, t.pos.y, t.pos.z];
             let mut rot = [t.rot_deg.x, t.rot_deg.y, t.rot_deg.z];
             let mut scl = [t.scale.x, t.scale.y, t.scale.z];

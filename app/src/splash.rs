@@ -114,7 +114,7 @@ impl Splash {
             compat::text(p, egui::pos2(strip.min.x + 10.0, strip.center().y - 1.0), egui::Align2::LEFT_CENTER, label, 12.0, alpha_c(TEXT, a));
             compat::text(p, egui::pos2(strip.max.x - 10.0, strip.center().y - 1.0), egui::Align2::RIGHT_CENTER, &format!("{:.0}%", frac * 100.0), 12.0, alpha_c(DIM, a));
             let bar = Rect::from_min_size(egui::pos2(r.min.x, r.max.y - 3.0), vec2(r.width() * frac, 3.0));
-            p.rect_filled(bar, 0.0, alpha_c(ACCENT, a));
+            p.rect_filled(bar, 0.0, alpha_c(accent(), a));
             compat::stroke_rect(p, r, 0.0, compat::stroke(1.0, alpha_c(LINE, a)));
         });
         ctx.request_repaint();

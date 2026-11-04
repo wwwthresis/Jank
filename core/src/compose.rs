@@ -89,12 +89,16 @@ pub fn render_states(project: &Project, spec: &FrameSpec, r: &mut Renderer) {
     let style = project.scene.lighting.apply(spec.style);
     let style: &PsxStyle = &style;
     let lit = &project.scene.lighting;
+    let (mode, quality) = match r.shadow_cap {
+        Some(cap) => cap.limit(lit.shadows, lit.quality),
+        None => (lit.shadows, lit.quality),
+    };
     // shadows: a map of the scene as the light sees it, applied by the renderer to what it draws
-    r.shadow = if lit.shadows == crate::lighting::ShadowMode::Off || lit.shadow_strength <= 0.0 {
+    r.shadow = if mode == crate::lighting::ShadowMode::Off || lit.shadow_strength <= 0.0 {
         None
     } else {
         let casters: Vec<crate::shadow::Caster> = owned.iter().map(|o| crate::shadow::Caster { model: &o.asset.model, pos: &o.pos, world: o.world }).collect();
-        crate::shadow::ShadowMap::build(&casters, style.light_dir, lit.shadows == crate::lighting::ShadowMode::Blob, lit.quality, lit.softness).map(|map| crate::shadow::ShadowInput { map, strength: lit.shadow_strength })
+        crate::shadow::ShadowMap::build_cached(&casters, style.light_dir, mode == crate::lighting::ShadowMode::Blob, quality, lit.softness).map(|map| crate::shadow::ShadowInput { map, strength: lit.shadow_strength })
     };
     let insts: Vec<Instance> = owned.iter().map(|o| Instance { model: &o.asset.model, pos: &o.pos, nrm: &o.nrm, world: o.world, textures: &o.tex, id: o.id, tint: o.tint }).collect();
     // scene layers: pictures behind and in front of the 3D objects

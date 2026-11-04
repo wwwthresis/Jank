@@ -67,7 +67,7 @@ impl App {
         let aspect = rw as f32 / rh as f32;
 
         // ---- refresh the picture when something may have changed (input, playback, resolution), at most ~12 times a second
-        let busy = ctx.input(|i| !i.events.is_empty() || i.pointer.any_down()) || self.ed.playing;
+        let busy = (if self.settings.lazy_redraw { crate::viewport::scene_input(ctx) } else { ctx.input(|i| !i.events.is_empty() || i.pointer.any_down()) }) || self.ed.playing;
         let st = &mut self.pv;
         if busy || st.size != (rw, rh) {
             st.stale = true;
@@ -159,7 +159,7 @@ impl App {
                 let dw = (d.x * sx + d.y * sy * aspect) * 0.5 * 2.0 * 0.5 + (d.x * sx) * 0.5;
                 self.settings.preview.width = (w + dw).clamp(PREVIEW_WIDTH_MIN, PREVIEW_WIDTH_MAX);
             }
-            ui.painter().rect_filled(Rect::from_center_size(grip.center(), vec2(8.0, 8.0)), compat::cr(1.0), alpha(ACCENT, if gr.hovered() || gr.dragged() { 255 } else { 140 }));
+            ui.painter().rect_filled(Rect::from_center_size(grip.center(), vec2(8.0, 8.0)), compat::cr(1.0), alpha(accent(), if gr.hovered() || gr.dragged() { 255 } else { 140 }));
             let over = ui.interact(body, Id::new("pv_body"), Sense::hover());
             if over.hovered() {
                 let s = compat::scroll_y(ctx);

@@ -1,5 +1,6 @@
 //! Jank! — a studio for low-poly and PSX-style models. This crate is a thin shell: all logic lives in `psxcore` (editor, jobs, filebrowser).
 mod appinfo;
+mod chrome;
 mod commands_ui;
 mod crash;
 mod compat;
@@ -21,14 +22,13 @@ mod viewport;
 mod widgets;
 
 use dialogs::{Dialog, ExportCfg};
-use eframe::egui::{self, Align, Color32, Context, Layout, TopBottomPanel};
+use eframe::egui::{self, Color32, Context};
 use icons::Icon;
 use psxcore::commands::CommandId;
 use psxcore::editor::{Editor, Mode};
 use psxcore::jobs::ExportJob;
 use psxcore::raster::Renderer;
 use theme::*;
-use widgets::Btn;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum ModelTool {
@@ -109,11 +109,11 @@ pub const SURF_GHOST_NEXT: usize = 3;
 
 pub fn mode_accent(m: Mode) -> Color32 {
     match m {
-        Mode::Model => ACCENT,
-        Mode::Texture => ACCENT,
-        Mode::Pose => ACCENT,
-        Mode::Animate => ACCENT,
-        Mode::Render => ACCENT,
+        Mode::Model => accent(),
+        Mode::Texture => accent(),
+        Mode::Pose => accent(),
+        Mode::Animate => accent(),
+        Mode::Render => accent(),
     }
 }
 pub fn mode_label(m: Mode) -> &'static str {
@@ -282,110 +282,6 @@ impl App {
             ctx.request_repaint();
         }
     }
-
-    /// Main menu: every command of the catalogue, grouped the way artists look for them.
-    fn menu_bar(&mut self, ctx: &Context) {
-        TopBottomPanel::top("menu").exact_height(24.0).frame(compat::frame(BG1, 0.0).inner_margin(egui::Margin::symmetric(6, 2))).show(ctx, |ui| {
-            egui::menu::bar(ui, |ui| {
-                use CommandId::*;
-                let groups: [(&str, &[CommandId]); 6] = [
-                    ("File", &[NewProject, OpenProject, SaveProject, SaveProjectAs, ImportModel, ExportOutput, Quit]),
-                    ("Edit", &[Undo, Redo, DeleteSelected, CommandPalette, OpenSettings]),
-                    ("Model", &[AddCube, AddButterfly, Subdivide, MirrorX, WeldVertices, FlatShade, AutoUv]),
-                    ("Animation", &[TogglePlay, PrevFrame, NextFrame, AddFrame, DuplicateFrame]),
-                    ("View", &[ModeModel, ModeTexture, ModePose, ModeAnimate, ModeRender, FrameAll, TogglePreview, ToggleStats, GizmoSelect, GizmoMove, GizmoRotate, GizmoScale, GizmoToggleSpace, GizmoToggleSnap]),
-                    ("Help", &[OpenAbout, OpenLicenses]),
-                ];
-                for (name, items) in groups {
-                    ui.menu_button(name, |ui| {
-                        ui.set_min_width(230.0);
-                        for &id in items {
-                            let label = self.settings.keymap.label(id);
-                            let mut b = egui::Button::new(id.title());
-                            if !label.is_empty() {
-                                b = b.shortcut_text(label);
-                            }
-                            if ui.add(b).on_hover_text(id.info().description).clicked() {
-                                self.run_command(ctx, id);
-                                ui.close_menu();
-                            }
-                        }
-                    });
-                }
-            });
-        });
-    }
-
-    fn top_bar(&mut self, ctx: &Context) {
-        self.menu_bar(ctx);
-        TopBottomPanel::top("top").exact_height(36.0).frame(compat::frame(BG0, 0.0).inner_margin(egui::Margin::symmetric(8, 4))).show(ctx, |ui| {
-            ui.horizontal(|ui| {
-                widgets::logo(ui, 20.0);
-                ui.add_space(8.0);
-                for m in MODES {
-                    let on = self.ed.mode == m;
-                    if widgets::tab(ui, mode_label(m), Some(mode_icon(m)), on, &self.tip_for(mode_command(m), mode_label(m))).clicked() {
-                        self.ed.set_mode(m);
-                    }
-                }
-                ui.add_space(10.0);
-                ui.separator();
-                if Btn::new("").icon(Icon::Plus).tip(&self.tip_for(CommandId::NewProject, "New project")).show(ui).clicked() {
-                    self.new_project();
-                }
-                if Btn::new("").icon(Icon::Open).tip(&self.tip_for(CommandId::OpenProject, "Open project")).show(ui).clicked() {
-                    self.dialog = Some(dialogs::browser(dialogs::Purpose::OpenProject));
-                }
-                if Btn::new("").icon(Icon::Save).tip(&self.tip_for(CommandId::SaveProject, "Save project")).show(ui).clicked() {
-                    self.save();
-                }
-                if Btn::new("Import").icon(Icon::Cube).tip(&self.tip_for(CommandId::ImportModel, "Import a model: OBJ, STL, PLY, glTF/GLB")).show(ui).clicked() {
-                    self.dialog = Some(dialogs::browser(dialogs::Purpose::ImportModel));
-                }
-                ui.separator();
-                if Btn::new("").icon(Icon::Undo).enabled(self.ed.can_undo()).tip(&self.tip_for(CommandId::Undo, "Undo")).show(ui).clicked() {
-                    self.ed.undo();
-                }
-                if Btn::new("").icon(Icon::Redo).enabled(self.ed.can_redo()).tip(&self.tip_for(CommandId::Redo, "Redo")).show(ui).clicked() {
-                    self.ed.redo();
-                }
-                ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                    if Btn::new("").icon(Icon::Gear).tip(&self.tip_for(CommandId::OpenSettings, "Settings: scale, accessibility, autosave, shortcuts")).show(ui).clicked() {
-                        self.run_command(ctx, CommandId::OpenSettings);
-                    }
-                    if Btn::new("").icon(Icon::Search).tip(&self.tip_for(CommandId::CommandPalette, "Search commands")).show(ui).clicked() {
-                        self.run_command(ctx, CommandId::CommandPalette);
-                    }
-                    if ui.available_width() > 300.0 {
-                        ui.label(egui::RichText::new(self.ed.title()).size(12.0).color(DIM));
-                    }
-                });
-            });
-        });
-    }
-
-    /// One-line status bar: last message, selection facts and the build number.
-    fn status_bar(&mut self, ctx: &Context) {
-        TopBottomPanel::bottom("status").exact_height(22.0).frame(compat::frame(BG0, 0.0).inner_margin(egui::Margin::symmetric(8, 2)).stroke(compat::stroke(1.0, LINE_SOFT))).show(ctx, |ui| {
-            ui.horizontal_centered(|ui| {
-                let dim = |t: String| egui::RichText::new(t).size(11.5).color(DIM);
-                let msg = if self.ed.status.is_empty() { "Ready".to_string() } else { self.ed.status.clone() };
-                ui.label(dim(msg));
-                ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                    ui.label(dim(format!("Jank! {}", appinfo::version_string())));
-                    ui.separator();
-                    let sel = self.ed.selected_object.and_then(|id| self.ed.project.scene.object(id)).map(|o| o.name.clone());
-                    let tris = self.ed.selected_model().map_or(0, |m| m.triangle_count());
-                    ui.label(dim(match sel {
-                        Some(n) => format!("{n}  |  {tris} tris  |  {} faces selected", self.ed.selected_faces.len()),
-                        None => "no object selected".to_string(),
-                    }));
-                    ui.separator();
-                    ui.label(dim(format!("{} mode", mode_label(self.ed.mode))));
-                });
-            });
-        });
-    }
 }
 
 impl eframe::App for App {
@@ -415,8 +311,9 @@ impl eframe::App for App {
         }
         self.poll_job(ctx);
 
-        self.top_bar(ctx);
+        self.menu_bar(ctx);
         self.status_bar(ctx);
+        self.ribbon(ctx);
         if matches!(self.ed.mode, Mode::Pose | Mode::Animate | Mode::Render) {
             self.timeline_panel(ctx);
         }
@@ -425,11 +322,13 @@ impl eframe::App for App {
         if self.ed.mode == Mode::Texture || (self.ed.mode == Mode::Animate && self.anim_tool != AnimTool::Pose) {
             self.texture_panel(ctx);
         }
+        self.tool_strip(ctx);
         egui::CentralPanel::default().frame(compat::frame(BG0, 0.0)).show(ctx, |ui| self.viewport_ui(ui));
 
         self.dialogs(ctx);
         self.run_pending(ctx);
         self.toasts_ui(ctx, dt);
+        self.sync_look(ctx);
         self.layout_reset = false;
 
         let title = self.ed.title();

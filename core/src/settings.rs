@@ -114,6 +114,109 @@ impl Default for PreviewPrefs {
 pub const PREVIEW_WIDTH_MIN: f32 = 120.0;
 pub const PREVIEW_WIDTH_MAX: f32 = 900.0;
 
+/// A small set of named choices stored by a stable id (shared code for the option enums below).
+pub trait Choice: Copy + PartialEq + Sized + 'static {
+    const ALL: &'static [Self];
+    fn id(self) -> &'static str;
+    fn label(self) -> &'static str;
+    fn parse(s: &str) -> Option<Self> {
+        let s = s.trim().to_ascii_lowercase();
+        Self::ALL.iter().copied().find(|c| c.id() == s)
+    }
+}
+
+macro_rules! choice {
+    ($(#[$m:meta])* $name:ident { $($(#[$vm:meta])* $v:ident = $id:literal, $label:literal;)+ }) => {
+        $(#[$m])*
+        #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+        pub enum $name { $($(#[$vm])* $v,)+ }
+        impl Choice for $name {
+            const ALL: &'static [Self] = &[$($name::$v,)+];
+            fn id(self) -> &'static str { match self { $($name::$v => $id,)+ } }
+            fn label(self) -> &'static str { match self { $($name::$v => $label,)+ } }
+        }
+    };
+}
+
+choice!(
+    /// The one interaction colour of the interface (selection, active tool, focus).
+    Accent {
+        Violet = "violet", "Violet";
+        Blue = "blue", "Blue";
+        Teal = "teal", "Teal";
+        Green = "green", "Green";
+        Amber = "amber", "Amber";
+        Rose = "rose", "Rose";
+    }
+);
+impl Accent {
+    /// sRGB colour of the accent.
+    pub fn rgb(self) -> [u8; 3] {
+        match self {
+            Accent::Violet => [0x8a, 0x7b, 0xf2],
+            Accent::Blue => [0x5c, 0x9c, 0xf0],
+            Accent::Teal => [0x3c, 0xb4, 0xa6],
+            Accent::Green => [0x7d, 0xbf, 0x69],
+            Accent::Amber => [0xdd, 0xa0, 0x3f],
+            Accent::Rose => [0xe0, 0x68, 0x8a],
+        }
+    }
+}
+
+choice!(
+    /// Spacing of the controls.
+    Density {
+        Compact = "compact", "Compact";
+        Comfortable = "comfortable", "Comfortable";
+    }
+);
+
+choice!(
+    /// Size of the interface text (independent of the interface scale).
+    TextSize {
+        Small = "small", "Small";
+        Normal = "normal", "Normal";
+        Large = "large", "Large";
+    }
+);
+impl TextSize {
+    /// Body text size in points.
+    pub fn points(self) -> f32 {
+        match self {
+            TextSize::Small => 12.0,
+            TextSize::Normal => 13.0,
+            TextSize::Large => 14.5,
+        }
+    }
+}
+
+choice!(
+    /// Shadows in the editing viewport. The final render and the preview window always use the scene's own setting.
+    ViewportShadows {
+        /// Exactly like the final render.
+        Render = "render", "Like render";
+        /// The scene's shadows, but a shadow map of at most Medium quality.
+        Medium = "medium", "Up to Medium";
+        /// Soft round spots instead of cast shadows.
+        Blob = "blob", "Blob";
+        Off = "off", "Off";
+    }
+);
+
+choice!(
+    /// Composition guides drawn over the viewport in Render mode.
+    Guides {
+        Off = "off", "Off";
+        Thirds = "thirds", "Thirds";
+        Centre = "centre", "Centre";
+        SafeArea = "safe", "Safe area";
+        Golden = "golden", "Golden";
+    }
+);
+
+pub const SPEED_MIN: f32 = 0.25;
+pub const SPEED_MAX: f32 = 3.0;
+
 #[derive(Clone, Debug, PartialEq)]
 pub struct Settings {
     /// Multiplier for the whole interface (1.0 = normal).
@@ -135,6 +238,28 @@ pub struct Settings {
     pub last_dir: Option<String>,
     pub recent_files: Vec<String>,
     pub keymap: Keymap,
+    /// Interface accent colour.
+    pub accent: Accent,
+    pub density: Density,
+    pub text_size: TextSize,
+    /// The vertical tool strip at the left edge of the viewport.
+    pub show_toolbar: bool,
+    pub show_status_bar: bool,
+    /// Frame rate and drawing time at the right end of the status bar.
+    pub status_fps: bool,
+    /// Shadows in the editing viewport only.
+    pub viewport_shadows: ViewportShadows,
+    /// Redraw the 3D view only when something in it may have changed (saves power and keeps the interface fast).
+    pub lazy_redraw: bool,
+    /// Multipliers for orbiting and wheel zoom, `SPEED_MIN..=SPEED_MAX`.
+    pub orbit_speed: f32,
+    pub zoom_speed: f32,
+    pub invert_orbit_y: bool,
+    /// Pixel grid over the texture canvas when zoomed in far enough.
+    pub pixel_grid: bool,
+    /// Strength of the onion-skin ghosts, 0.1..=1.
+    pub onion_opacity: f32,
+    pub guides: Guides,
 }
 
 impl Default for Settings {
@@ -153,6 +278,20 @@ impl Default for Settings {
             last_dir: None,
             recent_files: vec![],
             keymap: Keymap::default(),
+            accent: Accent::Violet,
+            density: Density::Compact,
+            text_size: TextSize::Normal,
+            show_toolbar: true,
+            show_status_bar: true,
+            status_fps: false,
+            viewport_shadows: ViewportShadows::Render,
+            lazy_redraw: true,
+            orbit_speed: 1.0,
+            zoom_speed: 1.0,
+            invert_orbit_y: false,
+            pixel_grid: true,
+            onion_opacity: 0.6,
+            guides: Guides::Off,
         }
     }
 }
@@ -199,6 +338,10 @@ impl Settings {
         let w = self.preview.width;
         self.preview.width = if w.is_finite() { w.clamp(PREVIEW_WIDTH_MIN, PREVIEW_WIDTH_MAX) } else { PreviewPrefs::default().width };
         self.recent_files.truncate(RECENT_LIMIT);
+        let speed = |v: f32| if v.is_finite() { v.clamp(SPEED_MIN, SPEED_MAX) } else { 1.0 };
+        self.orbit_speed = speed(self.orbit_speed);
+        self.zoom_speed = speed(self.zoom_speed);
+        self.onion_opacity = if self.onion_opacity.is_finite() { self.onion_opacity.clamp(0.1, 1.0) } else { 0.6 };
     }
 
     /// Remembers a file at the front of the recent list (no duplicates).
@@ -230,6 +373,20 @@ impl Settings {
         s.push_str(&format!("preview.visible = {}\n", self.preview.visible));
         s.push_str(&format!("preview.corner = {}\n", self.preview.corner.id()));
         s.push_str(&format!("preview.width = {:.0}\n", self.preview.width));
+        s.push_str(&format!("accent = {}\n", self.accent.id()));
+        s.push_str(&format!("density = {}\n", self.density.id()));
+        s.push_str(&format!("text_size = {}\n", self.text_size.id()));
+        s.push_str(&format!("show_toolbar = {}\n", self.show_toolbar));
+        s.push_str(&format!("show_status_bar = {}\n", self.show_status_bar));
+        s.push_str(&format!("status_fps = {}\n", self.status_fps));
+        s.push_str(&format!("viewport_shadows = {}\n", self.viewport_shadows.id()));
+        s.push_str(&format!("lazy_redraw = {}\n", self.lazy_redraw));
+        s.push_str(&format!("orbit_speed = {:.2}\n", self.orbit_speed));
+        s.push_str(&format!("zoom_speed = {:.2}\n", self.zoom_speed));
+        s.push_str(&format!("invert_orbit_y = {}\n", self.invert_orbit_y));
+        s.push_str(&format!("pixel_grid = {}\n", self.pixel_grid));
+        s.push_str(&format!("onion_opacity = {:.2}\n", self.onion_opacity));
+        s.push_str(&format!("guides = {}\n", self.guides.id()));
         if let Some(d) = &self.last_dir {
             s.push_str(&format!("last_dir = {d}\n"));
         }
@@ -293,6 +450,20 @@ impl Settings {
                 "preview.visible" => parse_bool(v).map(|b| st.preview.visible = b).unwrap_or_else(bad),
                 "preview.corner" => Corner::parse(v).map(|c| st.preview.corner = c).ok_or(()).unwrap_or_else(|_| bad()),
                 "preview.width" => v.parse().map(|x| st.preview.width = x).unwrap_or_else(|_| bad()),
+                "accent" => Accent::parse(v).map(|c| st.accent = c).ok_or(()).unwrap_or_else(|_| bad()),
+                "density" => Density::parse(v).map(|c| st.density = c).ok_or(()).unwrap_or_else(|_| bad()),
+                "text_size" => TextSize::parse(v).map(|c| st.text_size = c).ok_or(()).unwrap_or_else(|_| bad()),
+                "show_toolbar" => parse_bool(v).map(|b| st.show_toolbar = b).unwrap_or_else(bad),
+                "show_status_bar" => parse_bool(v).map(|b| st.show_status_bar = b).unwrap_or_else(bad),
+                "status_fps" => parse_bool(v).map(|b| st.status_fps = b).unwrap_or_else(bad),
+                "viewport_shadows" => ViewportShadows::parse(v).map(|c| st.viewport_shadows = c).ok_or(()).unwrap_or_else(|_| bad()),
+                "lazy_redraw" => parse_bool(v).map(|b| st.lazy_redraw = b).unwrap_or_else(bad),
+                "orbit_speed" => v.parse().map(|x| st.orbit_speed = x).unwrap_or_else(|_| bad()),
+                "zoom_speed" => v.parse().map(|x| st.zoom_speed = x).unwrap_or_else(|_| bad()),
+                "invert_orbit_y" => parse_bool(v).map(|b| st.invert_orbit_y = b).unwrap_or_else(bad),
+                "pixel_grid" => parse_bool(v).map(|b| st.pixel_grid = b).unwrap_or_else(bad),
+                "onion_opacity" => v.parse().map(|x| st.onion_opacity = x).unwrap_or_else(|_| bad()),
+                "guides" => Guides::parse(v).map(|c| st.guides = c).ok_or(()).unwrap_or_else(|_| bad()),
                 "last_dir" => st.last_dir = Some(v.to_string()),
                 "recent" => recent.push(v.to_string()),
                 _ => {} // written by a newer version: ignore silently
@@ -358,6 +529,19 @@ mod tests {
         s.push_recent(Path::new("/work/a.jank"));
         s.push_recent(Path::new("/work/b.jank"));
         s.keymap.set(CommandId::MirrorX, vec![Chord::parse("Alt+X").unwrap()]);
+        s.accent = Accent::Teal;
+        s.density = Density::Comfortable;
+        s.text_size = TextSize::Large;
+        s.show_toolbar = false;
+        s.status_fps = true;
+        s.viewport_shadows = ViewportShadows::Blob;
+        s.lazy_redraw = false;
+        s.orbit_speed = 1.5;
+        s.zoom_speed = 0.75;
+        s.invert_orbit_y = true;
+        s.pixel_grid = false;
+        s.onion_opacity = 0.35;
+        s.guides = Guides::Thirds;
         let (back, problems) = Settings::from_text(&s.to_text());
         assert!(problems.is_empty(), "{problems:?}");
         assert_eq!(back.recent_files, vec!["/work/b.jank", "/work/a.jank"]);
@@ -373,6 +557,27 @@ mod tests {
         assert!(s.layout.left_width >= 180.0);
         let (s, _) = Settings::from_text("ui_scale = NaN\n");
         assert_eq!(s.ui_scale, 1.0);
+        let (s, _) = Settings::from_text("orbit_speed = 40\nzoom_speed = 0\nonion_opacity = 7\n");
+        assert_eq!((s.orbit_speed, s.zoom_speed, s.onion_opacity), (SPEED_MAX, SPEED_MIN, 1.0));
+    }
+
+    #[test]
+    fn every_choice_round_trips_through_its_id() {
+        fn check<C: Choice + std::fmt::Debug>() {
+            for &c in C::ALL {
+                assert_eq!(C::parse(c.id()), Some(c));
+                assert_eq!(C::parse(&c.id().to_ascii_uppercase()), Some(c), "ids are case-insensitive");
+                assert!(!c.label().is_empty());
+            }
+        }
+        check::<Accent>();
+        check::<Density>();
+        check::<TextSize>();
+        check::<ViewportShadows>();
+        check::<Guides>();
+        let (s, p) = Settings::from_text("accent = plaid\n");
+        assert_eq!(s.accent, Accent::Violet);
+        assert_eq!(p.len(), 1);
     }
 
     #[test]

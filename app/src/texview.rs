@@ -10,7 +10,6 @@ pub struct TexView {
     pub zoom: f32,
     pub pan: Vec2,
     pub show_uv: bool,
-    pub grid: bool,
     pub tex: Option<egui::TextureHandle>,
     pub drag: Option<Canvas>,
     pub last_canvas: Option<Canvas>,
@@ -18,7 +17,7 @@ pub struct TexView {
 }
 impl Default for TexView {
     fn default() -> Self {
-        Self { zoom: 4.0, pan: Vec2::ZERO, show_uv: true, grid: true, tex: None, drag: None, last_canvas: None, last_size: (0, 0) }
+        Self { zoom: 4.0, pan: Vec2::ZERO, show_uv: true, tex: None, drag: None, last_canvas: None, last_size: (0, 0) }
     }
 }
 
@@ -33,18 +32,18 @@ impl App {
                 widgets::dim(ui, "Select an object to edit its texture, or make a picture layer to draw a plain image or a backdrop.");
                 ui.add_space(6.0);
                 ui.horizontal_wrapped(|ui| {
-                    if Btn::new("Layer behind").icon(Icon::Plus).accent(ACCENT).tip("A picture behind the 3D scene").show(ui).clicked() {
+                    if Btn::new("Layer behind").icon(Icon::Plus).accent(accent()).tip("A picture behind the 3D scene").show(ui).clicked() {
                         self.ed.add_scene_layer(true);
                         self.paint.scene_target = true;
                     }
-                    if Btn::new("Layer in front").icon(Icon::Plus).accent(ACCENT).tip("A picture in front of the 3D scene").show(ui).clicked() {
+                    if Btn::new("Layer in front").icon(Icon::Plus).accent(accent()).tip("A picture in front of the 3D scene").show(ui).clicked() {
                         self.ed.add_scene_layer(false);
                         self.paint.scene_target = true;
                     }
                 });
                 return;
             };
-            let accent = if self.ed.mode == Mode::Animate { WARN } else { ACCENT };
+            let accent = if self.ed.mode == Mode::Animate { WARN } else { accent() };
             if matches!(canvas, Canvas::Base { .. } | Canvas::Patch { .. } | Canvas::Emotion { .. }) {
                 self.texture_selector(ui, accent);
             }
@@ -52,7 +51,9 @@ impl App {
             ui.horizontal(|ui| {
                 widgets::dim(ui, &format!("{tw}×{th} px"));
                 widgets::toggle(ui, &mut self.tex.show_uv, "UV", accent);
-                widgets::toggle(ui, &mut self.tex.grid, "Grid", accent);
+                if widgets::toggle(ui, &mut self.settings.pixel_grid, "Grid", accent).clicked() {
+                    self.touch_settings();
+                }
                 if Btn::new("Fit").tip("Zoom so the whole texture fits the window").show(ui).clicked() {
                     self.tex.last_canvas = None;
                 }
@@ -153,7 +154,7 @@ impl App {
             painter.image(t.id(), img, Rect::from_min_max(pos2(0.0, 0.0), pos2(1.0, 1.0)), Color32::WHITE);
         }
         compat::stroke_rect(painter, img.expand(1.0), 0.0, crate::compat::stroke(1.0, LINE));
-        if self.tex.grid && z >= 8.0 {
+        if self.settings.pixel_grid && z >= 8.0 {
             let st = crate::compat::stroke(1.0, Color32::from_rgba_unmultiplied(255, 255, 255, 26));
             for i in 1..size.0 {
                 let x = img.min.x + i as f32 * z;
@@ -263,7 +264,7 @@ impl App {
             let (x0, x1) = (a.0.min(b.0), a.0.max(b.0) + 1);
             let (y0, y1) = (a.1.min(b.1), a.1.max(b.1) + 1);
             let r = Rect::from_min_max(pos2(img.min.x + x0 as f32 * z, img.min.y + y0 as f32 * z), pos2(img.min.x + x1 as f32 * z, img.min.y + y1 as f32 * z));
-            painter.rect_filled(r, compat::cr(0.0), alpha(ACCENT, 40));
+            painter.rect_filled(r, compat::cr(0.0), alpha(accent(), 40));
             compat::stroke_rect(painter, r, 0.0, crate::compat::stroke(1.0, Color32::WHITE));
         }
         let Some(sel) = self.ed.selection_for_public(canvas) else { return };
@@ -315,7 +316,7 @@ impl App {
             Canvas::Hand { .. } | Canvas::Scene { .. } => return,
         };
         let z = img.width();
-        let st = crate::compat::stroke(1.0, alpha(ACCENT, 110));
+        let st = crate::compat::stroke(1.0, alpha(accent(), 110));
         let mut budget = 6000usize;
         for (mi, mesh) in model.meshes.iter().enumerate() {
             let uses = model.materials.get(mesh.material).and_then(|m| m.texture) == Some(self.tex_index(canvas, tex));
@@ -329,7 +330,7 @@ impl App {
                 budget -= 1;
                 let pts: Vec<Pos2> = t.iter().map(|&i| mesh.verts[i as usize].uv).map(|uv| pos2(img.min.x + uv.x * z, img.min.y + uv.y * img.height())).collect();
                 if self.ed.selected_faces.contains(&(mi, ti)) {
-                    painter.add(Shape::convex_polygon(pts, alpha(ACCENT, 90), crate::compat::stroke(1.5, ACCENT)));
+                    painter.add(Shape::convex_polygon(pts, alpha(accent(), 90), crate::compat::stroke(1.5, accent())));
                 } else {
                     painter.add(Shape::closed_line(pts, st));
                 }
@@ -373,10 +374,10 @@ impl App {
                 let col = self.ed.brush.color;
                 self.ed.texture_op(c, TexOp::Fill(col));
             }
-            if Btn::new("Load").icon(Icon::Image).accent(ACCENT).tip("Replace the texture with an image (PNG, JPEG, BMP, TGA, PPM)").show(ui).clicked() {
+            if Btn::new("Load").icon(Icon::Image).accent(accent()).tip("Replace the texture with an image (PNG, JPEG, BMP, TGA, PPM)").show(ui).clicked() {
                 self.dialog = Some(dialogs::browser(dialogs::Purpose::ImportTexture(c)));
             }
-            if Btn::new("Save PNG").icon(Icon::Export).accent(ACCENT).tip("Exports the texture as a PNG file").show(ui).clicked() {
+            if Btn::new("Save PNG").icon(Icon::Export).accent(accent()).tip("Exports the texture as a PNG file").show(ui).clicked() {
                 self.dialog = Some(dialogs::browser(dialogs::Purpose::SaveTexture(c)));
             }
         });

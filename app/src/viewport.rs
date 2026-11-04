@@ -28,6 +28,36 @@ pub struct VpState {
     pub gizmo_text: String,
     /// Last point of a freehand drawing stroke, in render pixels.
     pub hand_last: (f32, f32),
+    /// Lazy redraw: fingerprint of what the last viewport picture was drawn with.
+    pub drawn_key: u64,
+    /// Frames still to redraw after the last input, so results applied a frame later are picked up.
+    pub settle: u8,
+}
+
+/// True when this frame's input may have changed the scene or the view: anything except plain
+/// pointer movement with no button held (hovering the panels must not re-render the 3D view).
+pub fn scene_input(ctx: &egui::Context) -> bool {
+    ctx.input(|i| i.pointer.any_down() || i.events.iter().any(|e| !matches!(e, egui::Event::PointerMoved(_) | egui::Event::MouseMoved(_) | egui::Event::PointerGone)))
+}
+
+/// Fingerprint of the view state that changes the picture without any input event (playback,
+/// resizing, quality scale changes and the camera).
+fn view_key(ed: &psxcore::editor::Editor, w: u32, h: u32, cap: Option<psxcore::lighting::ShadowCap>) -> u64 {
+    let mut k = 0xcbf29ce484222325u64;
+    let mut mix = |x: u64| k = (k ^ x).wrapping_mul(0x100000001b3);
+    mix(((w as u64) << 32) | h as u64);
+    mix(ed.mode as u64);
+    mix(((ed.current_anim as u64) << 32) | ed.current_frame as u64);
+    mix(ed.tick as u64);
+    mix(ed.playing as u64 | (ed.through_camera as u64) << 1 | (ed.dirty as u64) << 2 | (ed.onion as u64) << 3);
+    mix(ed.selected_object.map_or(u64::MAX, |v| v as u64));
+    mix(ed.project.scene.objects.len() as u64);
+    mix(cap.map_or(0, |c| 1 + c.mode as u64 * 16 + c.quality as u64));
+    let cam = ed.active_camera();
+    for v in [cam.eye.x, cam.eye.y, cam.eye.z, cam.target.x, cam.target.y, cam.target.z, cam.fov_y] {
+        mix(v.to_bits() as u64);
+    }
+    k
 }
 
 fn camera_axes(cam: &Camera) -> (Vec3, Vec3, Vec3) {
@@ -39,13 +69,14 @@ fn camera_axes(cam: &Camera) -> (Vec3, Vec3, Vec3) {
 
 /// Onion-skin ghost of a neighbouring frame as premultiplied RGBA: a crisp outline plus a faint fill, in one colour per direction,
 /// so the previous and the next frame can be told apart from each other and from the live picture.
-fn ghost_pixels(f: &Frame, tint: Color32, out: &mut Vec<u8>) {
+fn ghost_pixels(f: &Frame, tint: Color32, opacity: f32, out: &mut Vec<u8>) {
     let (w, h) = (f.w as usize, f.h as usize);
     out.clear();
     out.resize(w * h * 4, 0);
     let drawn = |x: usize, y: usize| f.depth[y * w + x].is_finite();
     let premul = |a: u32| [(tint.r() as u32 * a / 255) as u8, (tint.g() as u32 * a / 255) as u8, (tint.b() as u32 * a / 255) as u8, a as u8];
-    let (fill, edge) = (premul(46), premul(235));
+    let o = opacity.clamp(0.0, 1.0) / 0.6; // 0.6 is the default strength the base values were tuned for
+    let (fill, edge) = (premul((46.0 * o).round().min(255.0) as u32), premul((235.0 * o.min(255.0 / 235.0)).round() as u32));
     for y in 0..h {
         for x in 0..w {
             if !drawn(x, y) {
@@ -58,17 +89,74 @@ fn ghost_pixels(f: &Frame, tint: Color32, out: &mut Vec<u8>) {
 }
 
 /// Cheap key that changes whenever the ghost of a frame has to be drawn again.
-fn ghost_key(idx: usize, cam: &Camera, w: u32, h: u32, anim: usize, frames: usize) -> u64 {
+fn ghost_key(idx: usize, cam: &Camera, w: u32, h: u32, anim: usize, frames: usize, opacity: f32) -> u64 {
     let mut k = 0xcbf29ce484222325u64;
     let mut mix = |x: u64| k = (k ^ x).wrapping_mul(0x100000001b3);
     mix(idx as u64);
     mix(((w as u64) << 32) | h as u64);
     mix(anim as u64);
     mix(frames as u64);
+    mix(opacity.to_bits() as u64);
     for v in [cam.eye.x, cam.eye.y, cam.eye.z, cam.target.x, cam.target.y, cam.target.z, cam.fov_y] {
         mix(v.to_bits() as u64);
     }
     k
+}
+
+/// Shadow limit of the editing viewport for the "Viewport shadows" setting (`None`: like the render).
+pub fn viewport_shadow_cap(v: psxcore::settings::ViewportShadows) -> Option<psxcore::lighting::ShadowCap> {
+    use psxcore::lighting::{ShadowCap, ShadowMode, ShadowQuality};
+    use psxcore::settings::ViewportShadows as V;
+    match v {
+        V::Render => None,
+        V::Medium => Some(ShadowCap { mode: ShadowMode::Projected, quality: ShadowQuality::Medium }),
+        V::Blob => Some(ShadowCap { mode: ShadowMode::Blob, quality: ShadowQuality::Ultra }),
+        V::Off => Some(ShadowCap { mode: ShadowMode::Off, quality: ShadowQuality::Low }),
+    }
+}
+
+/// Composition guides over the part of the view that the final picture covers (`aspect` = width / height).
+fn draw_guides(p: &egui::Painter, img: Rect, aspect: f32, g: psxcore::settings::Guides) {
+    use psxcore::settings::Guides;
+    if g == Guides::Off {
+        return;
+    }
+    let (w, h) = if img.width() / img.height() > aspect { (img.height() * aspect, img.height()) } else { (img.width(), img.width() / aspect) };
+    let r = Rect::from_center_size(img.center(), vec2(w, h));
+    let line = crate::compat::stroke(1.0, alpha(Color32::WHITE, 120));
+    let soft = crate::compat::stroke(1.0, alpha(Color32::BLACK, 90));
+    let seg = |a: Pos2, b: Pos2| {
+        p.line_segment([a + vec2(1.0, 1.0), b + vec2(1.0, 1.0)], soft);
+        p.line_segment([a, b], line);
+    };
+    let at = |fx: f32, fy: f32| pos2(r.min.x + fx * r.width(), r.min.y + fy * r.height());
+    crate::compat::stroke_rect(p, r, 0.0, crate::compat::stroke(1.0, alpha(accent(), 160)));
+    match g {
+        Guides::Off => {}
+        Guides::Thirds | Guides::Golden => {
+            let t = if g == Guides::Thirds { 1.0 / 3.0 } else { 0.381_966 };
+            for f in [t, 1.0 - t] {
+                seg(at(f, 0.0), at(f, 1.0));
+                seg(at(0.0, f), at(1.0, f));
+            }
+        }
+        Guides::Centre => {
+            let c = r.center();
+            let k = r.height().min(r.width()) * 0.06;
+            seg(c - vec2(k, 0.0), c + vec2(k, 0.0));
+            seg(c - vec2(0.0, k), c + vec2(0.0, k));
+            seg(at(0.5, 0.0), at(0.5, 0.04));
+            seg(at(0.5, 0.96), at(0.5, 1.0));
+            seg(at(0.0, 0.5), at(0.03, 0.5));
+            seg(at(0.97, 0.5), at(1.0, 0.5));
+        }
+        Guides::SafeArea => {
+            for (f, a) in [(0.9, 120u8), (0.8, 80)] {
+                let s = Rect::from_center_size(r.center(), r.size() * f);
+                crate::compat::stroke_rect(p, s, 0.0, crate::compat::stroke(1.0, alpha(Color32::WHITE, a)));
+            }
+        }
+    }
 }
 
 /// Pixel size the main viewport is drawn at for a widget of `rect` points.
@@ -95,13 +183,29 @@ impl App {
         // ---- draw the main viewport at the size of the widget (times the quality scale), independent of the render resolution
         let scale = self.perf.scale(self.settings.viewport_quality);
         let (w, h) = draw_size(rect, ppp, scale);
-        let t0 = std::time::Instant::now();
         self.rend.threads = if self.settings.render_threads == 0 { psxcore::raster::default_threads() } else { self.settings.render_threads as usize };
-        self.ed.render_viewport_sized(&mut self.rend, w, h);
-        if let Some(gl) = self.gl.clone() {
-            self.surf[SURF_VIEW].upload(&gl, w, h, self.rend.frame.rgba());
+        // the editing view may draw cheaper shadows than the final render (Settings → Viewport)
+        self.rend.shadow_cap = viewport_shadow_cap(self.settings.viewport_shadows);
+        // lazy redraw: skip the software render when neither the input nor the view changed
+        // (hovering panels, tooltips and UI animations then cost almost nothing)
+        let key = view_key(&self.ed, w, h, self.rend.shadow_cap);
+        if scene_input(&ctx) {
+            self.vp.settle = 2;
         }
-        self.perf.note_draw(t0.elapsed().as_secs_f32() * 1000.0);
+        let redraw = !self.settings.lazy_redraw || key != self.vp.drawn_key || self.vp.settle > 0 || self.surf[SURF_VIEW].id().is_none();
+        if redraw {
+            let t0 = std::time::Instant::now();
+            self.ed.render_viewport_sized(&mut self.rend, w, h);
+            if let Some(gl) = self.gl.clone() {
+                self.surf[SURF_VIEW].upload(&gl, w, h, self.rend.frame.rgba());
+            }
+            self.perf.note_draw(t0.elapsed().as_secs_f32() * 1000.0);
+            self.vp.drawn_key = key;
+            if self.vp.settle > 0 {
+                self.vp.settle -= 1;
+                ctx.request_repaint();
+            }
+        }
 
         // ---- onion-skin ghosts (redrawn only when their frame, the camera or the size changes)
         let ghosts = self.ed.mode == Mode::Animate && self.ed.onion && !self.ed.playing;
@@ -110,7 +214,7 @@ impl App {
             let cam = self.ed.active_camera();
             let (anim, frames) = (self.ed.current_anim, self.ed.animation().map_or(0, |a| a.frames.len()));
             for (slot, idx, tint) in [(0usize, prev, ONION_PREV), (1, next, ONION_NEXT)] {
-                let key = idx.map_or(0, |i| ghost_key(i, &cam, w, h, anim, frames));
+                let key = idx.map_or(0, |i| ghost_key(i, &cam, w, h, anim, frames, self.settings.onion_opacity));
                 let cache = &mut self.ghost;
                 let old = if slot == 0 { &mut cache.prev_key } else { &mut cache.next_key };
                 if *old == key {
@@ -124,7 +228,7 @@ impl App {
                         r.threads = self.rend.threads;
                         // draw the neighbour at the same size as the viewport
                         if self.ed.render_frame_sized(i, r, w, h) {
-                            ghost_pixels(&r.frame, tint, &mut cache.bytes);
+                            ghost_pixels(&r.frame, tint, self.settings.onion_opacity, &mut cache.bytes);
                             if let Some(gl) = &self.gl {
                                 surf.upload(gl, w, h, &cache.bytes);
                             }
@@ -199,14 +303,15 @@ impl App {
             if mods.shift {
                 self.ed.view.pan(d.x, d.y, img.height());
             } else {
-                self.ed.view.orbit(d.x, d.y);
+                let k = self.settings.orbit_speed;
+                self.ed.view.orbit(d.x * k, d.y * k * if self.settings.invert_orbit_y { -1.0 } else { 1.0 });
             }
             self.ed.through_camera = false;
         }
         if hover {
             let s = compat::scroll_y(ctx);
             if s != 0.0 {
-                self.ed.view.zoom(s * 0.05);
+                self.ed.view.zoom(s * 0.05 * self.settings.zoom_speed);
                 self.ed.through_camera = false;
             }
         }
@@ -376,7 +481,7 @@ impl App {
         for tri in self.ed.selected_face_world_tris() {
             let pts: Vec<Pos2> = tri.iter().filter_map(|v| cam.project(*v, w, h)).map(|(x, y, _)| at(x, y)).collect();
             if pts.len() == 3 {
-                p.add(Shape::convex_polygon(pts, alpha(ACCENT, 70), crate::compat::stroke(2.0, ACCENT)));
+                p.add(Shape::convex_polygon(pts, alpha(accent(), 70), crate::compat::stroke(2.0, accent())));
             }
         }
         // skeleton
@@ -384,7 +489,7 @@ impl App {
         if show_bones {
             for b in self.ed.screen_bones(w, h) {
                 let sel = self.ed.selected_bone == Some(b.bone);
-                let col = if sel { ACCENT } else { ACCENT };
+                let col = if sel { accent() } else { accent() };
                 if b.head != b.tail {
                     p.line_segment([at(b.head.0, b.head.1), at(b.tail.0, b.tail.1)], crate::compat::stroke(if sel { 4.0 } else { 2.5 }, col));
                 }
@@ -396,7 +501,7 @@ impl App {
         let info = format!("{}   {} tris", crate::mode_label(self.ed.mode), tris);
         compat::text(p, img.min + vec2(10.0, 10.0), Align2::LEFT_TOP, &info, 13.0, alpha(Color32::WHITE, 200));
         if self.ed.playing {
-            compat::text(p, img.max - vec2(10.0, 10.0), Align2::RIGHT_BOTTOM, "▶", 16.0, ACCENT);
+            compat::text(p, img.max - vec2(10.0, 10.0), Align2::RIGHT_BOTTOM, "▶", 16.0, accent());
         }
         if let Some(f) = self.ed.frame().filter(|_| matches!(self.ed.mode, Mode::Pose | Mode::Animate | Mode::Render)) {
             if !self.ed.through_camera {
@@ -405,6 +510,10 @@ impl App {
             if !f.note.is_empty() {
                 compat::text(p, pos2(img.center().x, img.max.y - 12.0), Align2::CENTER_BOTTOM, &f.note, 14.0, alpha(Color32::WHITE, 220));
             }
+        }
+        if self.ed.mode == Mode::Render {
+            let (rw, rh) = self.ed.render_size();
+            draw_guides(p, img, rw as f32 / rh.max(1) as f32, self.settings.guides);
         }
     }
 
@@ -415,13 +524,13 @@ impl App {
             widgets::dim(ui, "Import a model or start from a primitive, then paint right on it.");
             ui.add_space(6.0);
             ui.horizontal_wrapped(|ui| {
-                if Btn::new("Import model").icon(crate::icons::Icon::Open).accent(ACCENT).show(ui).clicked() {
+                if Btn::new("Import model").icon(crate::icons::Icon::Open).accent(accent()).show(ui).clicked() {
                     self.dialog = Some(dialogs::browser(dialogs::Purpose::ImportModel));
                 }
-                if Btn::new("Cube").icon(crate::icons::Icon::Cube).accent(ACCENT).show(ui).clicked() {
+                if Btn::new("Cube").icon(crate::icons::Icon::Cube).accent(accent()).show(ui).clicked() {
                     self.ed.add_primitive(psxcore::editor::Primitive::Cube);
                 }
-                if Btn::new("Open project").icon(crate::icons::Icon::Save).accent(ACCENT).show(ui).clicked() {
+                if Btn::new("Open project").icon(crate::icons::Icon::Save).accent(accent()).show(ui).clicked() {
                     self.dialog = Some(dialogs::browser(dialogs::Purpose::OpenProject));
                 }
             });

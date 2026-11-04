@@ -302,16 +302,16 @@ impl App {
                     (Some(GizmoMode::Scale), Icon::Scale, C::GizmoScale, "Scale"),
                 ] {
                     let tip = self.tip_for(id, label);
-                    if Btn::new("").icon(icon).accent(ACCENT).on(self.gizmo.mode == m).size(vec2(34.0, 30.0)).tip(&tip).show(ui).clicked() {
+                    if Btn::new("").icon(icon).accent(accent()).on(self.gizmo.mode == m).size(vec2(34.0, 30.0)).tip(&tip).show(ui).clicked() {
                         self.gizmo.mode = m;
                     }
                 }
                 let tip = self.tip_for(C::GizmoToggleSpace, "World or local axes");
-                if Btn::new(if self.gizmo.local { "Local" } else { "World" }).accent(ACCENT).size(vec2(70.0, 30.0)).tip(&tip).show(ui).clicked() {
+                if Btn::new(if self.gizmo.local { "Local" } else { "World" }).accent(accent()).size(vec2(70.0, 30.0)).tip(&tip).show(ui).clicked() {
                     self.gizmo.local = !self.gizmo.local;
                 }
                 let tip = self.tip_for(C::GizmoToggleSnap, "Snap to steps (hold Ctrl for a one-off snap)");
-                if Btn::new("Snap").accent(ACCENT).on(self.gizmo.snap).size(vec2(60.0, 30.0)).tip(&tip).show(ui).clicked() {
+                if Btn::new("Snap").accent(accent()).on(self.gizmo.snap).size(vec2(60.0, 30.0)).tip(&tip).show(ui).clicked() {
                     self.gizmo.snap = !self.gizmo.snap;
                 }
             });

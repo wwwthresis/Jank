@@ -51,7 +51,17 @@ Imported glTF/GLB models with a skeleton can be posed: select a bone and rotate 
 
 ## Settings and shortcuts
 
-`Ctrl+Comma` opens Settings: interface scale, autosave, accessibility and shortcuts. Every shortcut can be changed; `F1` shows the current list.
+`Ctrl+Comma` (or the gear at the bottom of the ribbon) opens Settings:
+
+- **Appearance**: accent colour, Compact or Comfortable spacing, text size, the tool strip, the status bar and the frame rate in it.
+- **Interface**: interface scale, tooltips, reduced motion, panel layout.
+- **Viewport**: sharpness, *Viewport shadows* (like the render, up to Medium, Blob or Off - only the editing view, never the render or export), redraw only when something changes, orbit and zoom speed, inverted vertical orbit, render threads, the preview window.
+- **Canvas & animation**: pixel grid of the texture editor, onion-skin strength, composition guides for Render mode (thirds, centre, safe area, golden ratio).
+- **Files** and **Hotkeys**: autosave and recovery; every shortcut can be changed, `F1` shows the current list.
+
+## The workspace
+
+The ribbon on the far left switches the five modes and holds New, Open, Save, Import, Export, Undo and Redo. Next to the viewport sits the tool strip with the tools of the current mode: Select and Sculpt when modelling; Pencil, Brush, Eraser, Bucket, Eyedropper, Line, Rectangle, Filled rectangle and the selection tools when painting; Pose, Draw, Paint and Move when animating; guides, preview window and camera view when rendering. Click a section title in a panel to fold it. `Ctrl+K` or the *Search commands* field at the top runs any command by name.
 
 ## Where Jank! keeps its files
 

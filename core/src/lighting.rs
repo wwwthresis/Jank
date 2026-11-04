@@ -12,6 +12,26 @@ use crate::math::*;
 use crate::raster::PsxStyle;
 use std::borrow::Cow;
 
+/// An upper limit for shadows: at most `mode` (Off < Blob < Cast) and, for cast shadows, at most `quality`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ShadowCap {
+    pub mode: ShadowMode,
+    pub quality: ShadowQuality,
+}
+impl ShadowCap {
+    /// The mode and quality to draw with when the scene asks for `mode` / `quality`.
+    pub fn limit(self, mode: ShadowMode, quality: ShadowQuality) -> (ShadowMode, ShadowQuality) {
+        let rank = |m: ShadowMode| match m {
+            ShadowMode::Off => 0,
+            ShadowMode::Blob => 1,
+            ShadowMode::Projected => 2,
+        };
+        let m = if rank(mode) <= rank(self.mode) { mode } else { self.mode };
+        let q = if quality.id() <= self.quality.id() { quality } else { self.quality };
+        (m, q)
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ShadowMode {
     Off,
@@ -233,5 +253,16 @@ mod tests {
         assert_ne!(out.bg_top, st.bg_top);
         assert_eq!(out.width, st.width);
         assert_eq!(ShadowMode::from_id(ShadowMode::Projected.id()), ShadowMode::Projected);
+    }
+
+    #[test]
+    fn a_shadow_cap_only_ever_lowers_the_shadows() {
+        let cap = ShadowCap { mode: ShadowMode::Projected, quality: ShadowQuality::Medium };
+        assert_eq!(cap.limit(ShadowMode::Projected, ShadowQuality::Ultra), (ShadowMode::Projected, ShadowQuality::Medium));
+        assert_eq!(cap.limit(ShadowMode::Projected, ShadowQuality::Low), (ShadowMode::Projected, ShadowQuality::Low));
+        assert_eq!(cap.limit(ShadowMode::Off, ShadowQuality::Ultra).0, ShadowMode::Off);
+        let blob = ShadowCap { mode: ShadowMode::Blob, quality: ShadowQuality::Ultra };
+        assert_eq!(blob.limit(ShadowMode::Projected, ShadowQuality::High).0, ShadowMode::Blob);
+        assert_eq!(blob.limit(ShadowMode::Off, ShadowQuality::High).0, ShadowMode::Off);
     }
 }

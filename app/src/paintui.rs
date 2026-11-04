@@ -288,19 +288,22 @@ impl App {
     // ------------------------------------------------------------------ selection
     pub fn selection_section(&mut self, ui: &mut Ui, accent: Color32) {
         let Some(canvas) = self.current_canvas() else { return };
+        let strip = self.settings.show_toolbar;
         section(ui, "Selection", accent, |ui| {
+            if !strip {
             ui.horizontal_wrapped(|ui| {
                 let can_island = matches!(canvas, Canvas::Base { .. } | Canvas::Patch { .. } | Canvas::Emotion { .. });
                 for (t, icon, tip, ok) in [
-                    (SelTool::Rect, Icon::Select, "Rectangle select: drag. Shift adds, Ctrl subtracts. A plain click clears", true),
+                    (SelTool::Rect, Icon::Marquee, "Rectangle select: drag. Shift adds, Ctrl subtracts. A plain click clears", true),
                     (SelTool::Wand, Icon::Wand, "Magic wand: selects the pixels of a similar colour", true),
-                    (SelTool::Island, Icon::Cube, "UV island: selects the whole island of the model under the cursor", can_island),
+                    (SelTool::Island, Icon::Island, "UV island: selects the whole island of the model under the cursor", can_island),
                 ] {
                     if Btn::new("").icon(icon).accent(accent).on(self.paint.sel_tool == Some(t)).enabled(ok).tip(tip).show(ui).clicked() {
                         self.paint.sel_tool = if self.paint.sel_tool == Some(t) { None } else { Some(t) };
                     }
                 }
             });
+            }
             if self.paint.sel_tool == Some(SelTool::Wand) {
                 slider_f(ui, "tolerance", &mut self.paint.wand_tol, 0.0..=128.0);
                 toggle(ui, &mut self.paint.wand_contiguous, "Only touching pixels", accent);
