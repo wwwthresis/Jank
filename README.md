@@ -7,6 +7,8 @@ Model it. Paint it. Pose it. Animate it. Render it. All in one small program.
 
 `0.2.0-alpha` · Linux · Written in Rust · No external tools needed
 
+<a href="https://thresis.itch.io/jank"><img src="docs/img/itch-badge.svg" alt="Available on itch.io" width="220"></a>
+
 </div>
 
 ![Jank! posing the butterfly demo](docs/img/pose.png)
