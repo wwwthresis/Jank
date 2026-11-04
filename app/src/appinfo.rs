@@ -8,6 +8,12 @@ use psxcore::version::{AppVersion, Channel};
 pub const PRODUCT: &str = "Jank!";
 pub const TAGLINE: &str = "A studio for low-poly and PSX-style models";
 pub const COPYRIGHT: &str = "Copyright (c) 2026 Thresis. All rights reserved.";
+/// Author and licensor (see `LICENSE`, section 14).
+pub const AUTHOR: &str = "Thresis (Moscow, Russian Federation)";
+/// Contact for questions, licences and security reports.
+pub const CONTACT: &str = "thresiss@gmail.com";
+/// The only official source of the program.
+pub const REPOSITORY: &str = "https://github.com/wwwthresis/Jank";
 
 /// Release channel of this build. Change it together with `Cargo.toml` when a stage is promoted.
 pub const CHANNEL: Channel = Channel::Alpha;

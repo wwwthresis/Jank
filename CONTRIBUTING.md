@@ -2,6 +2,8 @@
 
 Thank you for helping. This page explains how work is organised.
 
+Jank! is owned and maintained by **Thresis** (Moscow, Russian Federation). Questions about the project, licences or larger contributions: [thresiss@gmail.com](mailto:thresiss@gmail.com). The official repository is <https://github.com/wwwthresis/Jank>.
+
 ## Ground rules
 
 - Code, comments, documentation and interface text are in **English**.
@@ -13,7 +15,7 @@ Thank you for helping. This page explains how work is organised.
 
 ## Licence of contributions
 
-By sending code or art you agree to section 6 of [LICENSE](LICENSE): you keep your copyright and give the project owner the right to use and distribute your contribution as part of Jank!.
+By sending code or art you agree to section 6 of [LICENSE](LICENSE): you keep your copyright and give the project owner (Thresis) the right to use and distribute your contribution as part of Jank!. Send only work you made yourself or are allowed to give. Because the licence does not allow publishing forks, contributions go through pull requests to the official repository.
 
 ## Workflow
 
@@ -36,4 +38,4 @@ By sending code or art you agree to section 6 of [LICENSE](LICENSE): you keep yo
 
 ## Reporting bugs
 
-Use the bug template. Include the block from `Help > About > Support > Copy to clipboard` (version, build, platform).
+Use the bug template. Security problems go by e-mail, see [SECURITY.md](SECURITY.md). Include the block from `Help > About > Support > Copy to clipboard` (version, build, platform).

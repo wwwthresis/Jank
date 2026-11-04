@@ -355,6 +355,17 @@ impl App {
                             self.toast("Copied version information", crate::ToastKind::Info);
                         }
                     });
+                    section(ui, "Author and contact", accent(), |ui| {
+                        dim(ui, crate::appinfo::AUTHOR);
+                        ui.horizontal(|ui| {
+                            ui.label(egui::RichText::new(crate::appinfo::CONTACT).size(13.5).color(accent())).on_hover_text("Questions, licences and security reports");
+                            if Btn::new("Copy").tip("Copy the e-mail address").size(vec2(70.0, 24.0)).show(ui).clicked() {
+                                ui.ctx().copy_text(crate::appinfo::CONTACT.to_string());
+                                self.toast("Copied e-mail address", crate::ToastKind::Info);
+                            }
+                        });
+                        ui.hyperlink_to(crate::appinfo::REPOSITORY, crate::appinfo::REPOSITORY);
+                    });
                     dim(ui, crate::appinfo::COPYRIGHT);
                 }
                 AboutTab::Keys => {

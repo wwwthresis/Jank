@@ -1,9 +1,12 @@
 JANK! SOURCE-AVAILABLE LICENCE AND END-USER LICENCE AGREEMENT (EULA)
-Version 0.1
+Version 0.2 (applies from Jank! 0.2.0-alpha build 31034)
 
 Copyright (c) 2026 Thresis. All rights reserved.
 
-"Licensor" means Thresis, an individual, Russia.
+"Licensor" means Thresis, a private individual (natural person) living in
+Moscow, Russian Federation, the author and owner of Jank!.
+Contact: thresiss@gmail.com. Official source: https://github.com/wwwthresis/Jank
+(GitHub account wwwthresis).
 "Software" means Jank!, including its source code, the compiled program, the
 documentation and the assets that ship with it.
 "You" means the person who uses the Software.
@@ -28,7 +31,8 @@ files and other content that You create with the Software.
    b. Publish or distribute a fork, a derivative program or a competing product
       that contains code from the Software.
    c. Remove or change copyright, licence or attribution notices.
-   d. Use the Licensor's name, the name "Jank!" or its logos for another
+   d. Use the Licensor's name or pseudonym (Thresis, wwwthresis), the name
+      "Jank!" or its logos for another
       product or in a way that suggests the Licensor endorses it.
    e. Use the Software to train or build a competing product, or to offer the
       Software, or access to it, as a service to others.
@@ -81,9 +85,23 @@ files and other content that You create with the Software.
    that cannot be limited by law.
 
 10. PRIVACY
-   The Software does not connect to the internet and does not send data to the
-   Licensor. If a later version adds such a feature, it will be described
-   in this agreement and in the program before it is turned on.
+   The Software does not connect to the internet by itself and never sends
+   data to the Licensor. It collects no statistics and has no telemetry.
+
+   Discord status (optional). If the Discord desktop app runs on the same
+   computer, the Software can show "Playing Jank!" on Your Discord profile.
+   For this it talks only to the Discord app on Your computer (through
+   Discord's local connection, not through the internet). It sends: the
+   name of the current mode and a short description of what You do in it
+   (for example "Editing polygons, 96 vertices"), the time since the project
+   was opened, and, only if You allow it, the name of the project. The
+   Discord app then shows this to other people as Discord's own terms and
+   privacy policy describe; the Licensor receives nothing. You turn it on or
+   off, and choose what is shown, in Settings > Discord. The name of the
+   project is hidden unless You turn it on.
+
+   If a later version adds any other feature that sends data, it will be
+   described in this agreement and in the program before it is turned on.
 
 11. TERMINATION
    This licence ends automatically if You break it. Then You must stop using
@@ -97,8 +115,13 @@ files and other content that You create with the Software.
 
 13. LAW AND COURTS
    This agreement is governed by the law of the Russian Federation. Disputes
-   are decided by the courts of Moscow, Russia, unless mandatory consumer
-   law says otherwise.
+   are decided by the courts of the city of Moscow, Russian Federation,
+   unless mandatory consumer law says otherwise. The English text of this
+   agreement is the binding one.
 
 14. CONTACT
-   thresiss@gmail.com
+   Thresis, Moscow, Russian Federation
+   E-mail: thresiss@gmail.com
+   Source and issues: https://github.com/wwwthresis/Jank
+   Questions about this agreement, licences for uses it does not allow, and
+   security reports go to the e-mail address above.

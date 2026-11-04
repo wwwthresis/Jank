@@ -3,6 +3,17 @@
 All notable changes to Jank! are listed here, newest first.
 Versions follow [docs/VERSIONING.md](docs/VERSIONING.md): `MAJOR.MINOR.PATCH[-channel]+BUILD`.
 
+## 0.2.0-alpha (build 31034)
+
+### Changed
+- **Licence 0.2** (applies from this build): names the licensor (Thresis, Moscow, Russian Federation), the contact address thresiss@gmail.com and the official source (github.com/wwwthresis/Jank); new section 10 *Privacy* (no network, no telemetry, what the optional Discord status sends); disputes go to the courts of Moscow; the English text is binding.
+- README: all features of 0.2 (Edit mode, booleans, indexed colour, projection painting, IK, graph editor, reference pictures, radial menu, themes, Discord status), `Shift+Space` plays, new questions "Does it go online?", new section *Author and contact*.
+- SECURITY, CONTRIBUTING, the user guide (*Privacy*, *Help and contact*), DISCORD.md and the bug template name the author and the contact address.
+- `Cargo.toml` of `jank` and `psxcore`: author, licence file, repository, `publish = false`.
+
+### Added
+- *About → Overview* shows the author, the e-mail address (with a Copy button) and the link to the repository.
+
 ## 0.2.0-alpha (build 31033)
 
 ### Added

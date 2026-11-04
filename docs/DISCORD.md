@@ -32,6 +32,9 @@ Jank! talks only to the Discord app on the same computer through Discord's local
 no SDK. If Discord is not running, Jank! looks for it every 10 seconds; updates are sent at most
 every 4 seconds (Discord allows 5 per 20 seconds) and the activity is cleared when Jank! closes.
 
+What Discord then shows to other people is governed by Discord's own terms and privacy policy.
+The legal side for Jank! is section 10 (Privacy) of [LICENSE](../LICENSE).
+
 ## Setting up the Discord application (once, by the owner)
 
 1. Open <https://discord.com/developers/applications> → **New Application**, name it **Jank!**

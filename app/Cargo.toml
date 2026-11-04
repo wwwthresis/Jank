@@ -2,6 +2,10 @@
 name = "jank"
 version = "0.2.0"
 edition = "2021"
+authors = ["Thresis <thresiss@gmail.com>"]
+license-file = "../LICENSE"
+repository = "https://github.com/wwwthresis/Jank"
+publish = false
 description = "Jank! - a low-poly / PSX model studio: modeling, textures, posing, frame-by-frame animation and video/photo output"
 
 [dependencies]

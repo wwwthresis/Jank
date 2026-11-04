@@ -104,3 +104,11 @@ Settings and key bindings go to your XDG config folder, autosave to the XDG stat
 ## Trying the demo
 
 Open `demo/butterfly.jank`: press `Shift+Space` to play, `3` to see the bones, `2` for the texture, `5` for the render, and open the World tab to change the hour and the shadows.
+
+## Privacy
+
+Jank! works fully offline: no account, no telemetry, no update check. If you turn on the Discord status (`Settings > Discord`), the mode and what you are doing are passed to the Discord app on your computer; the project name only if you allow it. Details: [DISCORD.md](DISCORD.md).
+
+## Help and contact
+
+`F1` opens *About*: version, build and platform for a bug report (*Copy to clipboard*), the shortcuts, the licences and the author's contact. Bugs and ideas go to [GitHub Issues](https://github.com/wwwthresis/Jank/issues); questions, licences and security reports to the author, Thresis, at [thresiss@gmail.com](mailto:thresiss@gmail.com).

@@ -2,6 +2,10 @@
 name = "psxcore"
 version = "0.2.0"
 edition = "2021"
+authors = ["Thresis <thresiss@gmail.com>"]
+license-file = "../LICENSE"
+repository = "https://github.com/wwwthresis/Jank"
+publish = false
 description = "PSX-forge core: mesh, import, software PSX rasterizer, decimation, texture ops (std only)"
 
 # Standalone so it builds and tests without any network access.
