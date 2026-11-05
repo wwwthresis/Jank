@@ -295,9 +295,11 @@ pub fn toggle(ui: &mut Ui, value: &mut bool, label: &str, accent: Color32) -> Re
 /// Toggle switch with a tooltip (an empty `tip` shows none).
 pub fn toggle_tip(ui: &mut Ui, value: &mut bool, label: &str, accent: Color32, tip: &str) -> Response {
     let (tw, th) = (28.0, 14.0);
-    let (rect, resp) = ui.allocate_exact_size(vec2(ui.available_width().min(tw + 10.0 + label.chars().count() as f32 * 7.2), 20.0), Sense::click());
+    let (rect, mut resp) = ui.allocate_exact_size(vec2(ui.available_width().min(tw + 10.0 + label.chars().count() as f32 * 7.2), 20.0), Sense::click());
     if resp.clicked() {
         *value = !*value;
+        // callers that copy the value and write it back only on `changed()` (the Discord page) rely on this
+        resp.mark_changed();
     }
     let t = ui.ctx().animate_bool_with_time(resp.id, *value, if reduce_motion() { 0.0 } else { 0.08 });
     let track = egui::Rect::from_min_size(rect.min + vec2(0.0, 3.0), vec2(tw, th));
@@ -389,4 +391,30 @@ pub fn logo(ui: &mut Ui, size: f32) {
     let y = rect.center().y - h * 0.5;
     p.galley(pos2(rect.min.x, y), name, TEXT());
     p.galley(pos2(rect.min.x + w1 + 1.0, y), bang, accent());
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use eframe::egui::{Event, Modifiers, PointerButton, Pos2, RawInput, Rect};
+
+    /// A click on a toggle flips the value and reports `changed()`: settings pages that copy a value and write it back
+    /// only on a change (Discord, IK while dragging, projection painting) depend on the second part.
+    #[test]
+    fn a_clicked_toggle_flips_and_reports_a_change() {
+        let ctx = egui::Context::default();
+        let (mut v, mut changed) = (false, false);
+        let pos = pos2(20.0, 18.0);
+        let press = |pressed| Event::PointerButton { pos, button: PointerButton::Primary, pressed, modifiers: Modifiers::default() };
+        for events in [vec![], vec![Event::PointerMoved(pos), press(true)], vec![press(false)], vec![]] {
+            let input = RawInput { events, screen_rect: Some(Rect::from_min_size(Pos2::ZERO, vec2(400.0, 300.0))), ..Default::default() };
+            let _ = ctx.run(input, |ctx| {
+                egui::CentralPanel::default().show(ctx, |ui| {
+                    changed |= toggle_tip(ui, &mut v, "Show the project name", Color32::RED, "").changed();
+                });
+            });
+        }
+        assert!(v, "the click turned the toggle on");
+        assert!(changed, "the click was reported as a change");
+    }
 }

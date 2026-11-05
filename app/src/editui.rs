@@ -49,6 +49,23 @@ impl Default for EditUi {
     }
 }
 
+/// Above this many edges, points and dots the Edit-mode overlay is drawn as two batched meshes.
+const HEAVY_OVERLAY: usize = 6000;
+
+fn edge_colour(fl: u8, acc: Color32, wire: Color32) -> Color32 {
+    if fl & EDGE_SEL != 0 {
+        acc
+    } else if fl & EDGE_SEAM != 0 {
+        Color32::from_rgb(230, 70, 60)
+    } else if fl & EDGE_SHARP != 0 {
+        Color32::from_rgb(60, 200, 230)
+    } else if fl & EDGE_LOOSE != 0 {
+        Color32::from_rgb(200, 200, 200)
+    } else {
+        wire
+    }
+}
+
 fn drag_name(k: MeshDragKind) -> &'static str {
     match k {
         MeshDragKind::Move => "Move",
@@ -469,25 +486,48 @@ impl App {
         let acc = accent();
         let wire = Color32::from_rgb(10, 10, 12);
         let hidden_alpha = if xray { 150 } else { 45 };
+        // Heavy meshes: everything in two meshes (wires, then selection on top), without the halos.
+        let heavy = o.edges.len() + o.verts.len() + o.dots.len() > HEAVY_OVERLAY;
+        if heavy {
+            let (mut under, mut over) = (compat::Batch::default(), compat::Batch::default());
+            for &(a, b, fl) in &o.edges {
+                let sel = fl & EDGE_SEL != 0;
+                let vis = fl & EDGE_VISIBLE != 0;
+                if !vis && !xray && !sel {
+                    continue;
+                }
+                let c = edge_colour(fl, acc, wire);
+                let c = if vis { c } else { alpha(c, hidden_alpha) };
+                if sel {
+                    over.line(at(a), at(b), 2.0, c);
+                } else {
+                    under.line(at(a), at(b), 1.2, c);
+                }
+            }
+            let dots = if mode == SelectMode::Vertex { &o.verts } else if mode == SelectMode::Face { &o.dots } else { &Vec::new() };
+            let (size, plain) = if mode == SelectMode::Vertex { (4.0, Color32::BLACK) } else { (3.0, Color32::from_gray(20)) };
+            for &(x, y, sel, vis) in dots {
+                if !vis && !xray && !sel {
+                    continue;
+                }
+                let c = if sel { acc } else { plain };
+                (if sel { &mut over } else { &mut under }).square(at((x, y)), size, if vis { c } else { alpha(c, hidden_alpha) });
+            }
+            under.paint(p);
+            over.paint(p);
+        }
         // unselected first, selected on top
         for pass in 0..2 {
+            if heavy {
+                break;
+            }
             for &(a, b, fl) in &o.edges {
                 let sel = fl & EDGE_SEL != 0;
                 if sel != (pass == 1) {
                     continue;
                 }
                 let vis = fl & EDGE_VISIBLE != 0;
-                let mut c = if sel {
-                    acc
-                } else if fl & EDGE_SEAM != 0 {
-                    Color32::from_rgb(230, 70, 60)
-                } else if fl & EDGE_SHARP != 0 {
-                    Color32::from_rgb(60, 200, 230)
-                } else if fl & EDGE_LOOSE != 0 {
-                    Color32::from_rgb(200, 200, 200)
-                } else {
-                    wire
-                };
+                let mut c = edge_colour(fl, acc, wire);
                 if !vis {
                     c = alpha(c, hidden_alpha);
                     if !xray && !sel {
@@ -505,7 +545,7 @@ impl App {
         for &(a, b) in &o.hover {
             p.line_segment([at(a), at(b)], compat::stroke(2.5, alpha(Color32::WHITE, 200)));
         }
-        if mode == SelectMode::Vertex {
+        if mode == SelectMode::Vertex && !heavy {
             for &(x, y, sel, vis) in &o.verts {
                 if !vis && !xray && !sel {
                     continue;
@@ -518,7 +558,7 @@ impl App {
                 }
             }
         }
-        if mode == SelectMode::Face {
+        if mode == SelectMode::Face && !heavy {
             for &(x, y, sel, vis) in &o.dots {
                 if !vis && !xray && !sel {
                     continue;

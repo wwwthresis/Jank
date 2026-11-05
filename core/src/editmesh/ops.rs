@@ -2,7 +2,8 @@
 //! mesh behind (no dangling indices, consistent winding where it can) and selects its result,
 //! so the next step (usually a move) can follow at once.
 use super::*;
-use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
+use crate::fasthash::{HashMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum DeleteKind {
@@ -201,7 +202,7 @@ impl EditMesh {
         // vertices that must stay behind: those on the region's rim or used outside the region
         let region_verts: BTreeSet<u32> = region.iter().flat_map(|&f| self.faces[f as usize].verts().collect::<Vec<_>>()).collect();
         let rim: BTreeSet<u32> = boundary.iter().flat_map(|&(a, b, _, _)| [a, b]).collect();
-        let mut map: HashMap<u32, u32> = HashMap::new();
+        let mut map: HashMap<u32, u32> = HashMap::default();
         for &v in &region_verts {
             let outside = topo.vert_faces[v as usize].iter().any(|g| !region.contains(g)) || self.wires.iter().any(|&(a, b)| a == v || b == v);
             if rim.contains(&v) || outside {
@@ -244,7 +245,7 @@ impl EditMesh {
     fn extrude_edges(&mut self) -> Vec3 {
         let topo = self.topo();
         let edges: Vec<Edge> = self.sel_e.iter().copied().collect();
-        let mut map: HashMap<u32, u32> = HashMap::new();
+        let mut map: HashMap<u32, u32> = HashMap::default();
         let mut normal = Vec3::ZERO;
         let mut new_edges = vec![];
         for &(a, b) in &edges {
@@ -361,8 +362,8 @@ impl EditMesh {
 
     fn inset_region(&mut self, region: &BTreeSet<u32>, thickness: f32, depth: f32) {
         let topo = self.topo();
-        let mut next: HashMap<u32, u32> = HashMap::new();
-        let mut prev: HashMap<u32, u32> = HashMap::new();
+        let mut next: HashMap<u32, u32> = HashMap::default();
+        let mut prev: HashMap<u32, u32> = HashMap::default();
         let mut boundary = vec![];
         for &f in region {
             let face = &self.faces[f as usize];
@@ -377,14 +378,14 @@ impl EditMesh {
             }
         }
         // per-vertex normal over the region
-        let mut vn: HashMap<u32, Vec3> = HashMap::new();
+        let mut vn: HashMap<u32, Vec3> = HashMap::default();
         for &f in region {
             let n = newell(&self.face_points(&self.faces[f as usize]));
             for v in self.faces[f as usize].verts() {
                 *vn.entry(v).or_insert(Vec3::ZERO) += n;
             }
         }
-        let mut map: HashMap<u32, u32> = HashMap::new();
+        let mut map: HashMap<u32, u32> = HashMap::default();
         for (&v, &nx) in &next {
             let Some(&pv) = prev.get(&v) else { continue };
             let n = vn.get(&v).copied().unwrap_or(Vec3::Y).normalized();
@@ -485,7 +486,7 @@ impl EditMesh {
         let cuts = cuts.clamp(1, 32);
         let ts: Vec<f32> = if cuts == 1 { vec![(0.5 + slide.clamp(-0.98, 0.98) * 0.5).clamp(0.01, 0.99)] } else { (1..=cuts).map(|k| k as f32 / (cuts + 1) as f32).collect() };
         // new vertices per oriented ring edge
-        let mut cutv: HashMap<(u32, u32), Vec<u32>> = HashMap::new();
+        let mut cutv: HashMap<(u32, u32), Vec<u32>> = HashMap::default();
         for &(a, b) in &edges {
             let ids: Vec<u32> = ts
                 .iter()
@@ -592,7 +593,7 @@ impl EditMesh {
         }
         let full: BTreeSet<u32> = self.sel_f.clone();
         let full_c: Vec<Vec<u32>> = full.iter().map(|&f| self.faces[f as usize].verts().collect()).collect();
-        let mut mids: HashMap<Edge, u32> = HashMap::new();
+        let mut mids: HashMap<Edge, u32> = HashMap::default();
         for &(a, b) in &edges {
             let m = self.split_edge(a, b, 0.5);
             mids.insert((a, b), m);
@@ -872,7 +873,7 @@ impl EditMesh {
             }
         };
         let before = self.verts.len();
-        let mut map = HashMap::new();
+        let mut map = HashMap::default();
         let mut keep = BTreeSet::new();
         for g in groups {
             if g.len() < 2 {
@@ -911,12 +912,12 @@ impl EditMesh {
         let cand: Vec<u32> = if self.sel_v.is_empty() { (0..self.verts.len() as u32).collect() } else { self.sel_v.iter().copied().collect() };
         let dist = dist.max(1e-7);
         let cell = |p: Vec3| ((p.x / dist).floor() as i64, (p.y / dist).floor() as i64, (p.z / dist).floor() as i64);
-        let mut grid: HashMap<(i64, i64, i64), Vec<u32>> = HashMap::new();
+        let mut grid: HashMap<(i64, i64, i64), Vec<u32>> = HashMap::default();
         for &v in &cand {
             grid.entry(cell(self.pos(v))).or_default().push(v);
         }
-        let mut map: HashMap<u32, u32> = HashMap::new();
-        let mut taken: HashSet<u32> = HashSet::new();
+        let mut map: HashMap<u32, u32> = HashMap::default();
+        let mut taken: HashSet<u32> = HashSet::default();
         for &v in &cand {
             if taken.contains(&v) {
                 continue;
@@ -1527,7 +1528,7 @@ impl EditMesh {
         if self.sel_v.is_empty() {
             return false;
         }
-        let mut map: HashMap<u32, u32> = HashMap::new();
+        let mut map: HashMap<u32, u32> = HashMap::default();
         let sel_v: Vec<u32> = self.sel_v.iter().copied().collect();
         for v in sel_v {
             let p = self.pos(v);
@@ -1587,7 +1588,7 @@ impl EditMesh {
             return None;
         }
         let mut out = EditMesh { parts: self.parts.clone(), ..Default::default() };
-        let mut map: HashMap<u32, u32> = HashMap::new();
+        let mut map: HashMap<u32, u32> = HashMap::default();
         for &f in &self.sel_f {
             let face = &self.faces[f as usize];
             let c = face

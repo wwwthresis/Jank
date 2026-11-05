@@ -39,7 +39,16 @@ impl Camera {
     }
     /// World point -> (screen x, screen y, depth along the view direction). `None` if the point is behind the camera.
     pub fn project(&self, p: Vec3, w: u32, h: u32) -> Option<(f32, f32, f32)> {
-        let c = (self.proj(w as f32 / h as f32) * self.view()).mul_vec4([p.x, p.y, p.z, 1.0]);
+        self.project_vp(&self.view_proj(w, h), p, w, h)
+    }
+    /// The matrix [`Camera::project`] uses for a `w` x `h` picture. Build it once to project many points.
+    pub fn view_proj(&self, w: u32, h: u32) -> Mat4 {
+        self.proj(w as f32 / h as f32) * self.view()
+    }
+    /// [`Camera::project`] with a matrix from [`Camera::view_proj`] (same result, no matrix work per point).
+    #[inline]
+    pub fn project_vp(&self, vp: &Mat4, p: Vec3, w: u32, h: u32) -> Option<(f32, f32, f32)> {
+        let c = vp.mul_vec4([p.x, p.y, p.z, 1.0]);
         if c[3] <= self.near * 0.5 {
             return None;
         }
@@ -259,14 +268,15 @@ impl Frame {
     pub fn overlay(&self, tint: &dyn Fn(u16, u16, u32) -> [u8; 4], outline: &[(u16, [u8; 4])], width: i32) -> Vec<u8> {
         let (w, h) = (self.w as usize, self.h as usize);
         let mut out = vec![0u8; w * h * 4];
-        let mut cache: std::collections::HashMap<u32, [u8; 4]> = std::collections::HashMap::new();
+        // the tint of each triangle, asked once (rebuilt for every frame while editing)
+        let mut cache: Vec<Option<[u8; 4]>> = vec![None; self.tris.len()];
         let obj_at = |i: usize| self.tri_at.get(i).and_then(|&t| self.tris.get(t as usize)).map(|t| t.obj);
-        for i in 0..w * h {
-            let ti = self.tri_at[i];
-            if ti == NO_TRI {
-                continue;
-            }
-            let c = *cache.entry(ti).or_insert_with(|| self.tris.get(ti as usize).map_or([0; 4], |t| tint(t.obj, t.mesh, t.tri)));
+        for (i, &ti) in self.tri_at.iter().enumerate().take(w * h) {
+            let Some(slot) = cache.get_mut(ti as usize) else { continue };
+            let c = *slot.get_or_insert_with(|| {
+                let t = &self.tris[ti as usize];
+                tint(t.obj, t.mesh, t.tri)
+            });
             if c[3] > 0 {
                 out[i * 4..i * 4 + 4].copy_from_slice(&c);
             }
@@ -537,9 +547,9 @@ pub struct Renderer {
     bands: Vec<Vec<u32>>,
 }
 
-/// How many worker threads this machine can use sensibly.
+/// How many worker threads this machine can use sensibly (all logical cores, at most 16).
 pub fn default_threads() -> usize {
-    std::thread::available_parallelism().map_or(1, |n| n.get()).clamp(1, 8)
+    std::thread::available_parallelism().map_or(1, |n| n.get()).clamp(1, 16)
 }
 
 impl Renderer {
@@ -965,7 +975,7 @@ impl Band<'_> {
                 };
                 let mut rgb = [255.0f32; 3];
                 if tex.is_some() {
-                    let (ix, iy) = ((u * fw).floor() as i32, (v * fh).floor() as i32);
+                    let (ix, iy) = (ifloor(u * fw), ifloor(v * fh));
                     let (xx, yy) = if pow2 { ((ix & (tw - 1)) as usize, (iy & (th - 1)) as usize) } else { (ix.rem_euclid(tw) as usize, iy.rem_euclid(th) as usize) };
                     let texel = tpx[yy * tw as usize + xx];
                     // transparency: alpha 0, or black as a colour key (material `color_key`)
@@ -998,8 +1008,12 @@ fn post_rows(s: &PsxStyle, color: &mut [[u8; 4]], w: u32, h: u32, y0: i32) {
         return;
     }
     let nrows = color.len() / w as usize;
+    // the column part of the vignette, with the same arithmetic as per pixel
+    let dx2: Vec<f32> = if s.vignette > 0.0 { (0..w).map(|x| { let dx = x as f32 / w as f32 - 0.5; dx * dx }).collect() } else { vec![] };
     for r in 0..nrows {
         let y = y0 as u32 + r as u32;
+        let dy = y as f32 / h as f32 - 0.5;
+        let dy2 = dy * dy;
         for x in 0..w {
             let p = &mut color[r * w as usize + x as usize];
             let mut c = [p[0] as f32 / 255.0, p[1] as f32 / 255.0, p[2] as f32 / 255.0];
@@ -1009,8 +1023,7 @@ fn post_rows(s: &PsxStyle, color: &mut [[u8; 4]], w: u32, h: u32, y0: i32) {
                 c[k] = ((c[k] * s.tint[k] - 0.5) * s.contrast + 0.5) * s.brightness;
             }
             if s.vignette > 0.0 {
-                let (dx, dy) = (x as f32 / w as f32 - 0.5, y as f32 / h as f32 - 0.5);
-                let v = 1.0 - s.vignette * ((dx * dx + dy * dy) * 2.2).min(1.0);
+                let v = 1.0 - s.vignette * ((dx2[x as usize] + dy2) * 2.2).min(1.0);
                 c.iter_mut().for_each(|k| *k *= v);
             }
             if s.scanlines > 0.0 && y % 2 == 1 {

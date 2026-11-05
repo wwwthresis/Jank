@@ -6,7 +6,7 @@ Two crates, one direction of dependency: `jank` (GUI) -> `psxcore` (engine). The
 
 | Area | Modules |
 |---|---|
-| Math / data | `math`, `mesh`, `scene`, `texture`, `pose`, `anim`, `json` |
+| Math / data | `math`, `mesh`, `scene`, `texture`, `pose`, `anim`, `json`, `fasthash` (small deterministic hash map used by the mesh code; no randomised seeds, so Edit-mode results are the same on every run) |
 | Geometry ops | `modeling`, `decimate` (QEM), `selection`, `uvisland`, `gizmo`, `editmesh` (polygon mesh of Edit mode: `mod` conversion to and from triangle meshes, `select` loops/rings/paths/linked, `ops` extrude, inset, loop cut, knife, merge, dissolve, fill, bridge, ..., `bevel`, `boolean` (BSP-tree CSG on closed meshes, welded and merged back into clean polygons), `uv` seams unwrap), `ik` (CCD chain solver on skeleton poses) |
 | Drawing | `paint`, `palette`, `layers` (layer stacks, blending), `lighting` (time of day, shadow settings), `raster` (multithreaded banded software PSX rasterizer: scene layers behind and in front), `shadow` (shadow map: multithreaded depth from the light, block min/max tables for one-lookup fully-lit/fully-shadowed tests, soft PCF lookup, a small cache of maps reused while only the camera moves), `compose` (scene to render instances, shadow inputs) |
 | Editor state | `editor` (modes, tools, undo/redo, selection, pixel clipboard); `editor/editmode` (Edit-mode session: selection, modal grab/rotate/scale with axis locks and typed values, proportional editing, undo as one step per operation); `editor/extras` (booleans, reference pictures, IK drags, graph keys and easing, indexed colour, projection painting) |
@@ -43,4 +43,4 @@ Shadow pass (`core/src/shadow.rs`): every casting object is drawn into a depth m
 
 ## Built-in assets
 
-`core/assets/` holds the files that are compiled into the program (`butterfly.obj`, `butterfly_texture.png`) via `include_str!` / `include_bytes!`; `modeling::butterfly()` builds the model from them.
+`core/assets/` holds the files that are compiled into the program (`butterfly.obj`, `butterfly_texture.png`) via `include_str!` / `include_bytes!`; `modeling::butterfly()` builds the model from them. The starter scene `demo/bunnies.jank` is embedded in the app (`app/src/main.rs`, `STARTER`) and opened with `Editor::open_bytes`, so the first start needs no file on disk.

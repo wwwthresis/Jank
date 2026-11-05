@@ -61,3 +61,39 @@ cargo run --release --example make_butterfly_demo -- path/to/butterfly_rigged.gl
 ```
 
 The test `core/tests/butterfly_demo.rs` checks that the shipped demo opens with its skeleton, pose, layers and lighting and survives a save and reopen.
+
+## Rebuilding the bunny scene
+
+The starter scene `demo/bunnies.jank` is built into the program (`include_bytes!` in `app/src/main.rs`) and opens on the first start. It is made from two photos of plush toys (they are not part of the repository):
+
+```
+pip install numpy opencv-python-headless
+python3 tools/bunnies/make_bunnies.py white_bunny.png cream_bunny.jpg /tmp/bunnies
+cd core
+cargo run --release --example make_bunny_demo -- /tmp/bunnies ../demo/bunnies.jank preview.png
+```
+
+The Python script cuts each toy out of its photo, inflates the outline into a stuffed shape, bakes the front and back textures, and places bones and skin weights; the Rust example adds the rug, the floor, the lamp light, shadows and the idle animation. `core/tests/bunny_demo.rs` checks the shipped file (skeletons, weights, closed surfaces, the animation loop, a save and reopen). Rebuild the app afterwards so the new scene is embedded.
+
+## Measuring Edit-mode speed
+
+```
+cd core
+cargo run --release --example bench_edit [segments rings]     # default: a sphere of about 20 000 vertices
+```
+
+It prints the time of what happens every frame in Edit mode (overlay, hover) and of single actions (click, select all, move, extrude, undo).
+
+## Making a release
+
+1. Raise `app/BUILD_NUMBER` and add the entry `## <version> (build <N>)` at the top of `CHANGELOG.md` (for example `## 0.2.0-alpha (build 31035)`); the release notes are taken from it.
+2. Commit and push, then tag and push the tag:
+
+   ```
+   git tag v0.2.0-alpha.31035
+   git push origin v0.2.0-alpha.31035
+   ```
+
+3. The workflow `.github/workflows/release.yml` runs the engine tests, builds the program on Ubuntu 22.04 (so it also runs on older distributions), and publishes a GitHub release with the `tar.gz`, an AppImage and `SHA256SUMS`. Versions with a hyphen (`-alpha`, `-beta`) are marked as pre-releases. It can also be started by hand (*Actions → Release → Run workflow*); then the files are only kept as a workflow artifact.
+
+The same packages can be made locally with `tools/package_release.sh` (add `--no-build` to reuse the current release build; the AppImage is made only if `appimagetool` is installed). The files go to `dist/`, which git ignores. The script refuses a program larger than 20 MB (`MAX_MB`).

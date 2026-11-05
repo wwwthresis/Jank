@@ -10,12 +10,9 @@ impl EditMesh {
     pub fn vert_hidden(&self, v: u32) -> bool {
         self.hidden_v.contains(&v)
     }
-    fn edge_hidden(&self, topo: &Topo, e: Edge) -> bool {
-        if self.vert_hidden(e.0) || self.vert_hidden(e.1) {
-            return true;
-        }
-        let fs = topo.faces_of(e);
-        !fs.is_empty() && fs.iter().all(|&f| self.face_hidden(f))
+    /// A row of [`EditMesh::edge_table`] is hidden: an end is hidden, or every polygon using it is.
+    fn edge_row_hidden(&self, &(e, faces, all_hidden): &(Edge, u32, bool)) -> bool {
+        self.vert_hidden(e.0) || self.vert_hidden(e.1) || faces > 0 && all_hidden
     }
 
     /// Recomputes the two derived selection sets from the one the current mode owns
@@ -65,9 +62,8 @@ impl EditMesh {
 
     pub fn select_all(&mut self, on: bool) {
         if on {
-            let topo = self.topo();
             self.sel_v = (0..self.verts.len() as u32).filter(|&v| !self.vert_hidden(v)).collect();
-            self.sel_e = self.all_edges().into_iter().filter(|&e| !self.edge_hidden(&topo, e)).collect();
+            self.sel_e = self.edge_table().into_iter().filter(|x| !self.edge_row_hidden(x)).map(|x| x.0).collect();
             self.sel_f = (0..self.faces.len() as u32).filter(|&f| !self.face_hidden(f)).collect();
         } else {
             self.sel_v.clear();
@@ -81,10 +77,9 @@ impl EditMesh {
         !self.sel_v.is_empty()
     }
     pub fn select_invert(&mut self) {
-        let topo = self.topo();
         match self.mode {
             SelectMode::Vertex => self.sel_v = (0..self.verts.len() as u32).filter(|v| !self.sel_v.contains(v) && !self.vert_hidden(*v)).collect(),
-            SelectMode::Edge => self.sel_e = self.all_edges().into_iter().filter(|e| !self.sel_e.contains(e) && !self.edge_hidden(&topo, *e)).collect(),
+            SelectMode::Edge => self.sel_e = self.edge_table().into_iter().filter(|x| !self.sel_e.contains(&x.0) && !self.edge_row_hidden(x)).map(|x| x.0).collect(),
             SelectMode::Face => self.sel_f = (0..self.faces.len() as u32).filter(|f| !self.sel_f.contains(f) && !self.face_hidden(*f)).collect(),
         }
         self.sync_selection();

@@ -9,7 +9,7 @@
 //! symmetric corners) and are shared between the strips that meet at a vertex, so the result has
 //! no cracks. Holes left at corners where three or more bevelled edges meet are capped.
 use super::*;
-use std::collections::{HashMap, HashSet};
+use crate::fasthash::{HashMap, HashSet};
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct BevelOptions {
@@ -51,7 +51,7 @@ fn fan(em: &EditMesh, topo: &Topo, v: u32) -> Option<(Vec<FanFace>, bool)> {
     if items.is_empty() {
         return None;
     }
-    let mut by_prev: HashMap<u32, usize> = HashMap::new();
+    let mut by_prev: HashMap<u32, usize> = HashMap::default();
     for (i, it) in items.iter().enumerate() {
         if by_prev.insert(it.prev, i).is_some() {
             return None;
@@ -129,7 +129,7 @@ impl EditMesh {
         let segs = o.segments.clamp(1, 32);
         let topo = self.topo();
         let mut edges: BTreeSet<Edge> = self.sel_e.iter().copied().filter(|e| topo.faces_of(*e).len() == 2).collect();
-        let mut fans: HashMap<u32, (Vec<FanFace>, bool)> = HashMap::new();
+        let mut fans: HashMap<u32, (Vec<FanFace>, bool)> = HashMap::default();
         for &(a, b) in &edges.clone() {
             for v in [a, b] {
                 if !fans.contains_key(&v) {
@@ -151,11 +151,11 @@ impl EditMesh {
         let p0: Vec<Vec3> = self.verts.iter().map(|v| v.pos).collect();
         let elen = |a: u32, b: u32| (p0[a as usize] - p0[b as usize]).length();
         // replacement corners per (face, original vertex)
-        let mut repl: HashMap<(u32, u32), Vec<Corner>> = HashMap::new();
+        let mut repl: HashMap<(u32, u32), Vec<Corner>> = HashMap::default();
         // arcs: (vertex, low, high) -> interior vertices from low to high
-        let mut arcs: HashMap<(u32, u32, u32), Vec<u32>> = HashMap::new();
-        let mut kept: HashSet<u32> = HashSet::new();
-        let mut new_verts: HashSet<u32> = HashSet::new();
+        let mut arcs: HashMap<(u32, u32, u32), Vec<u32>> = HashMap::default();
+        let mut kept: HashSet<u32> = HashSet::default();
+        let mut new_verts: HashSet<u32> = HashSet::default();
         let mut verts: Vec<u32> = fans.keys().copied().filter(|v| edges.iter().any(|e| e.0 == *v || e.1 == *v)).collect();
         verts.sort_unstable();
         // pending terminal arcs to put into the cap polygon of valence-3 ends
@@ -355,14 +355,14 @@ impl EditMesh {
         let first_new = self.faces.len() as u32;
         self.faces.extend(strips);
         // cap the holes whose border consists only of new (or kept end) vertices
-        let mut directed: HashSet<(u32, u32)> = HashSet::new();
+        let mut directed: HashSet<(u32, u32)> = HashSet::default();
         for f in &self.faces {
             for e in f.edges() {
                 directed.insert(e);
             }
         }
         let inside = |x: u32| new_verts.contains(&x) || kept.contains(&x);
-        let mut next: HashMap<u32, Option<u32>> = HashMap::new();
+        let mut next: HashMap<u32, Option<u32>> = HashMap::default();
         for &(a, b) in &directed {
             if !directed.contains(&(b, a)) && inside(a) && inside(b) {
                 // the cap runs b -> a
@@ -372,7 +372,7 @@ impl EditMesh {
                 }
             }
         }
-        let mut used: HashSet<u32> = HashSet::new();
+        let mut used: HashSet<u32> = HashSet::default();
         let mut caps = vec![];
         let mut starts: Vec<u32> = next.keys().copied().collect();
         starts.sort_unstable();
@@ -421,8 +421,8 @@ impl EditMesh {
         let sel: Vec<u32> = self.sel_v.iter().copied().collect();
         let mut caps = vec![];
         let mut any = false;
-        let mut done: HashSet<(u32, u32)> = HashSet::new();
-        let mut on_edge: HashMap<(u32, u32), u32> = HashMap::new();
+        let mut done: HashSet<(u32, u32)> = HashSet::default();
+        let mut on_edge: HashMap<(u32, u32), u32> = HashMap::default();
         for v in sel {
             let Some((fv, closed)) = fan(self, &topo, v) else { continue };
             if !closed || fv.len() < 3 {

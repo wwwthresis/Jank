@@ -5,7 +5,7 @@
 //! cut, shrink/fatten) follow the mouse until they are confirmed or cancelled.
 use super::*;
 use crate::editmesh::{BevelOptions, BoolOp, DeleteKind, Edge, EditMesh, MergeKind, SelectMode};
-use std::collections::HashMap;
+use crate::fasthash::HashMap;
 
 /// An element under the cursor.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -129,6 +129,29 @@ pub const EDGE_SEAM: u8 = 2;
 pub const EDGE_SHARP: u8 = 4;
 pub const EDGE_VISIBLE: u8 = 8;
 pub const EDGE_LOOSE: u8 = 16;
+
+/// True when a point at screen (x, y) with view depth `depth` is not hidden behind what the frame
+/// drew around it (points next to the background count as visible: they are on the silhouette).
+fn visible_in(frame: &Frame, cam: &Camera, x: f32, y: f32, depth: f32) -> bool {
+    let (cx, cy) = (x.floor() as i32, y.floor() as i32);
+    let mut far: Option<f32> = Some(0.0);
+    for dy in -1..=1 {
+        for dx in -1..=1 {
+            match frame.view_depth(cx + dx, cy + dy, cam.near, cam.far) {
+                None => far = None,
+                Some(d) => {
+                    if let Some(f) = far {
+                        far = Some(f.max(d));
+                    }
+                }
+            }
+        }
+    }
+    match far {
+        None => true,
+        Some(f) => depth <= f * 1.004 + 0.002,
+    }
+}
 
 fn smoothstep_falloff(t: f32) -> f32 {
     let x = (1.0 - t).clamp(0.0, 1.0);
@@ -279,18 +302,25 @@ impl Editor {
     /// Selection changes are not undo steps of their own in most editors, but here they are cheap
     /// and make "oops, lost my selection" recoverable.
     fn edit_select(&mut self, f: impl FnOnce(&mut EditMesh)) {
-        let Some(asset) = self.edit.as_ref().map(|s| s.asset) else { return };
-        let before = self.edit.as_ref().map(|s| (s.mesh.sel_v.clone(), s.mesh.sel_e.clone(), s.mesh.sel_f.clone(), s.mesh.mode));
-        let mut m = self.edit.as_ref().unwrap().mesh.clone();
-        f(&mut m);
-        if before != Some((m.sel_v.clone(), m.sel_e.clone(), m.sel_f.clone(), m.mode)) {
-            self.end_group();
-            self.record(Slot::Mesh(asset));
-            if let Some(s) = &mut self.edit {
-                s.mesh = m;
-            }
-            self.edit_commit(true);
+        let Some(s) = self.edit.as_mut() else { return };
+        let asset = s.asset;
+        let m = &mut s.mesh;
+        let before = (m.sel_v.clone(), m.sel_e.clone(), m.sel_f.clone(), m.mode, m.active);
+        f(m);
+        if (&before.0, &before.1, &before.2, before.3) == (&m.sel_v, &m.sel_e, &m.sel_f, m.mode) {
+            // nothing selected or deselected: no undo step, and side effects (the active vertex) are dropped
+            (m.sel_v, m.sel_e, m.sel_f, m.mode, m.active) = before;
+            return;
         }
+        self.end_group();
+        self.record(Slot::Mesh(asset));
+        // the triangles are unchanged: only the stored polygons (which carry the selection) are refreshed
+        let Some(s) = &self.edit else { return };
+        if let Some(a) = self.project.assets.get_mut(s.asset) {
+            let fp = EditMesh::fingerprint(&a.model.meshes);
+            a.topology = Some(Box::new((fp, s.mesh.clone())));
+        }
+        self.dirty = true;
     }
 
     // -------------------------------------------------------------- geometry helpers
@@ -304,34 +334,21 @@ impl Editor {
     pub fn edit_screen(&self, w: u32, h: u32) -> Vec<Option<(f32, f32, f32)>> {
         let (Some(s), Some((m, _))) = (self.edit.as_ref(), self.edit_world()) else { return vec![] };
         let cam = self.active_camera();
-        s.mesh.verts.iter().map(|v| cam.project(m.transform_point(v.pos), w, h)).collect()
+        let vp = cam.view_proj(w, h);
+        s.mesh.verts.iter().map(|v| cam.project_vp(&vp, m.transform_point(v.pos), w, h)).collect()
     }
     fn visible_at(&self, frame: &Frame, x: f32, y: f32, depth: f32) -> bool {
         if self.edit.as_ref().is_some_and(|s| s.xray) {
             return true;
         }
-        let cam = self.active_camera();
-        let (cx, cy) = (x.floor() as i32, y.floor() as i32);
-        let mut far: Option<f32> = Some(0.0);
-        for dy in -1..=1 {
-            for dx in -1..=1 {
-                match frame.view_depth(cx + dx, cy + dy, cam.near, cam.far) {
-                    None => far = None,
-                    Some(d) => {
-                        if let Some(f) = far {
-                            far = Some(f.max(d));
-                        }
-                    }
-                }
-            }
-        }
-        match far {
-            None => true, // next to the background: on the silhouette
-            Some(f) => depth <= f * 1.004 + 0.002,
-        }
+        visible_in(frame, &self.active_camera(), x, y, depth)
     }
     fn vis_list(&self, frame: &Frame, scr: &[Option<(f32, f32, f32)>]) -> Vec<bool> {
-        scr.iter().map(|p| p.is_some_and(|(x, y, d)| self.visible_at(frame, x, y, d))).collect()
+        if self.edit.as_ref().is_some_and(|s| s.xray) {
+            return scr.iter().map(|p| p.is_some()).collect();
+        }
+        let cam = self.active_camera();
+        scr.iter().map(|p| p.is_some_and(|(x, y, d)| visible_in(frame, &cam, x, y, d))).collect()
     }
     fn face_screen_center(&self, scr: &[Option<(f32, f32, f32)>], f: u32, w: u32, h: u32) -> Option<(f32, f32, f32)> {
         let s = self.edit.as_ref()?;
@@ -546,38 +563,46 @@ impl Editor {
         let scr = self.edit_screen(w, h);
         let vis = self.vis_list(frame, &scr);
         let em = &s.mesh;
-        let topo = em.topo();
         let p2 = |v: u32| scr[v as usize].map(|p| (p.0, p.1));
-        for e in em.all_edges() {
-            if em.vert_hidden(e.0) || em.vert_hidden(e.1) {
-                continue;
+        // drawn every frame: one sorted pass over the edges, the sorted sets are walked alongside
+        let (mut sel, mut seam, mut sharp) = (em.sel_e.iter().peekable(), em.seams.iter().peekable(), em.sharp.iter().peekable());
+        let has = |it: &mut std::iter::Peekable<std::collections::btree_set::Iter<'_, Edge>>, e: Edge| {
+            while it.next_if(|&&x| x < e).is_some() {}
+            it.peek().is_some_and(|&&x| x == e)
+        };
+        let mut used = vec![false; em.verts.len()];
+        for (e, nf, all_hidden) in em.edge_table() {
+            for v in [e.0, e.1] {
+                if let Some(u) = used.get_mut(v as usize) {
+                    *u = true;
+                }
             }
-            let fs = topo.faces_of(e);
-            if !fs.is_empty() && fs.iter().all(|&f| em.face_hidden(f)) {
+            let (is_sel, is_seam, is_sharp) = (has(&mut sel, e), has(&mut seam, e), has(&mut sharp, e));
+            if em.vert_hidden(e.0) || em.vert_hidden(e.1) || nf > 0 && all_hidden {
                 continue;
             }
             let (Some(a), Some(b)) = (p2(e.0), p2(e.1)) else { continue };
             let mut fl = 0;
-            if em.sel_e.contains(&e) {
+            if is_sel {
                 fl |= EDGE_SEL;
             }
-            if em.seams.contains(&e) {
+            if is_seam {
                 fl |= EDGE_SEAM;
             }
-            if em.sharp.contains(&e) {
+            if is_sharp {
                 fl |= EDGE_SHARP;
             }
             if vis[e.0 as usize] || vis[e.1 as usize] {
                 fl |= EDGE_VISIBLE;
             }
-            if fs.is_empty() {
+            if nf == 0 {
                 fl |= EDGE_LOOSE;
             }
             o.edges.push((a, b, fl));
         }
         if em.mode == SelectMode::Vertex {
             for v in 0..em.verts.len() as u32 {
-                if em.vert_hidden(v) || topo.vert_nbrs[v as usize].is_empty() && !em.faces.iter().any(|f| f.has_vert(v)) {
+                if em.vert_hidden(v) || !used[v as usize] {
                     continue;
                 }
                 if let Some(p) = p2(v) {
@@ -585,12 +610,14 @@ impl Editor {
                 }
             }
         }
-        if em.mode == SelectMode::Face {
+        if let (SelectMode::Face, Some((m, _))) = (em.mode, self.edit_world()) {
+            let cam = self.active_camera();
+            let vp = cam.view_proj(w, h);
             for f in 0..em.faces.len() as u32 {
                 if em.face_hidden(f) {
                     continue;
                 }
-                if let Some((x, y, d)) = self.face_screen_center(&scr, f, w, h) {
+                if let Some((x, y, d)) = cam.project_vp(&vp, m.transform_point(em.face_center(f)), w, h) {
                     o.dots.push((x, y, em.sel_f.contains(&f), self.visible_at(frame, x, y, d)));
                 }
             }
@@ -699,7 +726,7 @@ impl Editor {
             normal: Vec3::ZERO,
             base,
             weights: vec![],
-            mirror: HashMap::new(),
+            mirror: HashMap::default(),
             loop_edge: Some((e, cuts)),
             w,
             h,
@@ -808,10 +835,10 @@ impl Editor {
                 }
             }
         }
-        let mut mirror = HashMap::new();
+        let mut mirror = HashMap::default();
         if s.mirror_x {
             let key = |p: Vec3| ((p.x * 1e3).round() as i64, (p.y * 1e3).round() as i64, (p.z * 1e3).round() as i64);
-            let mut by: HashMap<(i64, i64, i64), u32> = HashMap::new();
+            let mut by: HashMap<(i64, i64, i64), u32> = HashMap::default();
             for (i, v) in em.verts.iter().enumerate() {
                 by.insert(key(v.pos), i as u32);
             }

@@ -6,7 +6,7 @@
 //! neighbouring edges, and coplanar fragments are merged back into larger polygons, so the
 //! result stays a clean low-poly mesh that can be edited further.
 use super::*;
-use std::collections::HashMap;
+use crate::fasthash::HashMap;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum BoolOp {
@@ -325,7 +325,7 @@ impl EditMesh {
         let scale = self.verts.iter().chain(cutter.verts.iter()).fold(0.0f32, |m, v| m.max(v.pos.length())).max(1e-3);
         let eps = scale * 2e-5;
         // weld
-        let mut grid: HashMap<(i64, i64, i64), Vec<u32>> = HashMap::new();
+        let mut grid: HashMap<(i64, i64, i64), Vec<u32>> = HashMap::default();
         let mut verts: Vec<EVert> = vec![];
         let key = |p: Vec3| ((p.x / eps).floor() as i64, (p.y / eps).floor() as i64, (p.z / eps).floor() as i64);
         let mut faces: Vec<(Vec<(u32, PV)>, u16, bool)> = vec![];
@@ -415,7 +415,7 @@ impl EditMesh {
         let mode = self.mode;
         *self = EditMesh { verts, parts, mode, ..Default::default() };
         for (c, part, smooth) in faces {
-            let mut seen = std::collections::HashSet::new();
+            let mut seen = crate::fasthash::HashSet::default();
             if !c.iter().all(|x| seen.insert(x.0)) {
                 continue;
             }
@@ -474,7 +474,7 @@ impl EditMesh {
                 }
                 let mut c: Vec<Corner> = (1..=nf).map(|s| f.c[(kf + s) % nf]).collect(); // b .. a
                 c.extend((2..ng).map(|s| g.c[(kg + s) % ng])); // after a .. before b
-                let mut seen = std::collections::HashSet::new();
+                let mut seen = crate::fasthash::HashSet::default();
                 if !c.iter().all(|x| seen.insert(x.v)) {
                     continue;
                 }

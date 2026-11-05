@@ -3,3 +3,4 @@ target/
 *.tmp
 *.swp
 __pycache__/
+dist/

@@ -27,6 +27,7 @@ pub enum Purpose {
 pub enum After {
     New,
     Open,
+    Starter,
     Quit,
 }
 pub struct BrowserDlg {
@@ -447,6 +448,7 @@ impl App {
         match after {
             After::New => self.ed.new_project("Untitled"),
             After::Open => self.dialog = Some(browser(Purpose::OpenProject)),
+            After::Starter => self.load_starter(),
             After::Quit => {
                 self.allow_close = true;
                 compat::close(ctx);

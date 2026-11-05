@@ -1,7 +1,7 @@
 //! UV tools of Edit mode: unwrap (least-squares conformal maps, cut at seams), projection from the
 //! view, cube projection and island packing.
 use super::*;
-use std::collections::HashMap;
+use crate::fasthash::HashMap;
 
 /// A UV island being built: its polygons and, per corner, the index of its UV vertex.
 struct Chart {
@@ -17,7 +17,7 @@ impl EditMesh {
     fn charts(&self, faces: &[u32], cut: &dyn Fn(u32, u32) -> bool) -> Vec<Chart> {
         let set: BTreeSet<u32> = faces.iter().copied().collect();
         // corner ids
-        let mut ids: HashMap<(u32, usize), usize> = HashMap::new();
+        let mut ids: HashMap<(u32, usize), usize> = HashMap::default();
         let mut list = vec![];
         for &f in &set {
             for k in 0..self.faces[f as usize].c.len() {
@@ -39,18 +39,18 @@ impl EditMesh {
                 dsu.union(ids[&(f, a)] as u32, ids[&(g, b)] as u32);
             }
         }
-        let mut by_root: HashMap<u32, usize> = HashMap::new();
+        let mut by_root: HashMap<u32, usize> = HashMap::default();
         let mut charts: Vec<Chart> = vec![];
         for &f in &set {
             let r = fdsu.find(f);
             let ci = *by_root.entry(r).or_insert_with(|| {
-                charts.push(Chart { faces: vec![], corner_vert: HashMap::new(), pos: vec![] });
+                charts.push(Chart { faces: vec![], corner_vert: HashMap::default(), pos: vec![] });
                 charts.len() - 1
             });
             charts[ci].faces.push(f);
         }
         for ch in &mut charts {
-            let mut root_vert: HashMap<u32, usize> = HashMap::new();
+            let mut root_vert: HashMap<u32, usize> = HashMap::default();
             for &f in &ch.faces {
                 for (k, c) in self.faces[f as usize].c.iter().enumerate() {
                     let r = dsu.find(ids[&(f, k)] as u32);
@@ -131,7 +131,7 @@ impl EditMesh {
 
     fn chart_closed(&self, ch: &Chart) -> bool {
         // boundary edges of the chart: directed corner pairs without a twin
-        let mut edges: HashMap<(usize, usize), usize> = HashMap::new();
+        let mut edges: HashMap<(usize, usize), usize> = HashMap::default();
         for &f in &ch.faces {
             let n = self.faces[f as usize].c.len();
             for k in 0..n {

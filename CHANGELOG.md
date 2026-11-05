@@ -3,6 +3,24 @@
 All notable changes to Jank! are listed here, newest first.
 Versions follow [docs/VERSIONING.md](docs/VERSIONING.md): `MAJOR.MINOR.PATCH[-channel]+BUILD`.
 
+## 0.2.0-alpha (build 31035)
+
+### Added
+- **Starter scene**: the first start opens two plush bunnies on a pink rug in warm evening light, made from photos of real toys (shape from the outline, photo textures front and back, skeletons with skin weights) with a short *Idle* loop of ears, paws and feet. *File → Open the bunny scene* and a *Bunny scene* button on the empty-scene card open it again; it is built into the program (`demo/bunnies.jank`), so it never changes a file. Built by `tools/bunnies/make_bunnies.py` and `core/examples/make_bunny_demo.rs`; checked by `core/tests/bunny_demo.rs`.
+- **GitHub releases**: pushing a tag `v<version>.<build>` builds and publishes a release with a `tar.gz` (program, demo scenes, `install.sh` for the applications menu, icon, `.desktop` file), an AppImage and `SHA256SUMS`; notes come from this changelog. `tools/package_release.sh` makes the same files locally. See *Making a release* in BUILDING.md.
+- `core/examples/bench_edit.rs`: times Edit mode on a heavy mesh. `Editor::open_bytes` opens a project from memory.
+- New screenshots in the README and the user guide (Edit mode, radial menu, Curves, the Discord card, Render, Texture).
+
+### Changed
+- **Faster Edit mode**, measured with `bench_edit` on a sphere of 19 800 vertices (milliseconds, before → after): enter Edit mode 178 → 105; overlay each frame: vertices 23.3 → 4.9, edges 21.6 → 4.8, faces 27.6 → 6.7; hover 8.3 → 3.1; click select 3.5 → 1.0; select all 28.3 → 10.8; one step of a move 22.7 → 6.0, finishing it 23.6 → 5.9; extrude 58 → 24.5; undo 29 → 8.8; leave Edit mode 27 → 6.4. Drawing a wireframe of 40 000 edges in the window: about 21 → 5. How: one fast hash map for all mesh look-ups, the edge table and the overlay built in one pass, no copy of the mesh on selection, batched wireframe drawing for heavy meshes.
+- The renderer splits the picture over up to 16 threads (was 8), and Edit mode projects its points with one camera matrix per frame instead of one per point. On 1–2 cores the gain is small: the 3D picture was already drawn in parallel bands (about 49 ms on one thread, 25 ms on two for the butterfly demo at 1280×720).
+
+### Fixed
+- **The viewport and the preview window showed the picture too pale** (on every graphics card): the picture was uploaded as plain RGBA while egui treats textures as sRGB, so the colours were brightened twice. They now match the exported render exactly.
+- Switches that are written back only when they change did nothing when clicked: the Discord options, *Outline the object under the mouse*, *IK while dragging* and *Projection painting in 3D*.
+- The World/Snap strip of the viewport was drawn on top of the Settings window.
+- *Tris to quads* and other Edit-mode operations could give a different result from run to run; they are now deterministic.
+
 ## 0.2.0-alpha (build 31034)
 
 ### Changed

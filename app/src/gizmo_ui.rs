@@ -289,7 +289,8 @@ impl App {
 
     /// Small strip with the gizmo tools, shown at the top left of the viewport.
     pub fn gizmo_bar(&mut self, ctx: &egui::Context, img: Rect) {
-        if self.ed.edit_active() {
+        // The strip sits on a layer above ordinary windows, so it would show through an open dialog.
+        if self.ed.edit_active() || self.dialog.is_some() {
             return;
         }
         let relevant = match self.ed.mode {

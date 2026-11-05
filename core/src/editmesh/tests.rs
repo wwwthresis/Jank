@@ -386,3 +386,109 @@ fn boolean_difference_union_intersect() {
     let v = volume(&em);
     assert!((v - (1.0 - 0.16)).abs() < 1e-3, "hole volume {v}");
 }
+
+/// The straightforward write-back (hash maps in polygon order) that `to_meshes` replaced; the fast
+/// version must produce exactly the same meshes.
+fn reference_to_meshes(em: &EditMesh) -> (Vec<Mesh>, Vec<Vec<u32>>) {
+    let fnorm: Vec<Vec3> = em.faces.iter().map(|f| newell(&em.face_points(f))).collect();
+    // corner ids: offset of each face's first corner
+    let mut start = Vec::with_capacity(em.faces.len());
+    let mut total = 0u32;
+    for f in &em.faces {
+        start.push(total);
+        total += f.c.len() as u32;
+    }
+    let mut dsu = Dsu::new(total as usize);
+    let mut emap: std::collections::HashMap<Edge, Vec<(u32, usize)>> = std::collections::HashMap::new();
+    for (fi, f) in em.faces.iter().enumerate() {
+        if !f.smooth {
+            continue;
+        }
+        let n = f.c.len();
+        for k in 0..n {
+            emap.entry(ek(f.c[k].v, f.c[(k + 1) % n].v)).or_default().push((fi as u32, k));
+        }
+    }
+    for (e, list) in &emap {
+        if list.len() != 2 || em.sharp.contains(e) {
+            continue;
+        }
+        let ((f, k), (g, l)) = (list[0], list[1]);
+        let (nf, ng) = (em.faces[f as usize].c.len(), em.faces[g as usize].c.len());
+        let (fa, fb) = (em.faces[f as usize].c[k].v, em.faces[f as usize].c[(k + 1) % nf].v);
+        let (ga, _gb) = (em.faces[g as usize].c[l].v, em.faces[g as usize].c[(l + 1) % ng].v);
+        // the two faces see the edge in opposite directions when their winding agrees
+        let (gk_a, gk_b) = if ga == fb { ((l + 1) % ng, l) } else { (l, (l + 1) % ng) };
+        let _ = fa;
+        dsu.union(start[f as usize] + k as u32, start[g as usize] + gk_a as u32);
+        dsu.union(start[f as usize] + ((k + 1) % nf) as u32, start[g as usize] + gk_b as u32);
+    }
+    let mut acc = vec![Vec3::ZERO; total as usize];
+    for (fi, f) in em.faces.iter().enumerate() {
+        if !f.smooth {
+            continue;
+        }
+        for k in 0..f.c.len() {
+            let r = dsu.find(start[fi] + k as u32);
+            acc[r as usize] += fnorm[fi];
+        }
+    }
+    let mut meshes: Vec<Mesh> = em.parts.iter().map(|p| Mesh { name: p.name.clone(), verts: vec![], tris: vec![], material: p.material }).collect();
+    if meshes.is_empty() {
+        meshes.push(Mesh::new("Mesh"));
+    }
+    let mut tri_face: Vec<Vec<u32>> = vec![vec![]; meshes.len()];
+    let mut dedupe: Vec<std::collections::HashMap<(u32, [u32; 2], [u32; 3], [u32; 3]), u32>> = vec![std::collections::HashMap::new(); meshes.len()];
+    for (fi, f) in em.faces.iter().enumerate() {
+        if f.c.len() < 3 {
+            continue;
+        }
+        let part = (f.part as usize).min(meshes.len() - 1);
+        let flat = fnorm[fi].normalized();
+        let ids: Vec<u32> = (0..f.c.len())
+            .map(|k| {
+                let c = &f.c[k];
+                let nrm = if f.smooth { acc[dsu.find(start[fi] + k as u32) as usize].normalized() } else { flat };
+                let nrm = if nrm == Vec3::ZERO { Vec3::Y } else { nrm };
+                let key = (c.v, [c.uv.x.to_bits(), c.uv.y.to_bits()], c.color.map(f32::to_bits), [nrm.x.to_bits(), nrm.y.to_bits(), nrm.z.to_bits()]);
+                let mesh = &mut meshes[part];
+                *dedupe[part].entry(key).or_insert_with(|| {
+                    let ev = &em.verts[c.v as usize];
+                    mesh.verts.push(Vertex { pos: ev.pos, nrm, uv: c.uv, color: c.color, joints: ev.joints, weights: ev.weights });
+                    (mesh.verts.len() - 1) as u32
+                })
+            })
+            .collect();
+        for t in triangulate(&em.face_points(f)) {
+            meshes[part].tris.push([ids[t[0]], ids[t[1]], ids[t[2]]]);
+            tri_face[part].push(fi as u32);
+        }
+    }
+    (meshes, tri_face)
+}
+
+#[test]
+fn fast_write_back_equals_the_reference() {
+    let mut cases: Vec<EditMesh> = vec![cube()];
+    let mut sphere = EditMesh::from_meshes(&[modeling::sphere(1.0, 24, 12)]);
+    // flat and smooth polygons side by side, a sharp edge, an n-gon from a dissolve
+    for f in (0..sphere.faces.len()).step_by(3) {
+        sphere.faces[f].smooth = false;
+    }
+    let edges = sphere.all_edges();
+    sphere.sharp.insert(edges[edges.len() / 2]);
+    cases.push(sphere);
+    let mut ext = cube();
+    let top = top_face(&ext);
+    select_faces(&mut ext, &[top]);
+    ext.extrude();
+    cases.push(ext);
+    let mut two = EditMesh::from_meshes(&[modeling::cube(Vec3::ONE), modeling::cylinder(0.5, 1.0, 9)]);
+    for c in two.faces[0].c.iter_mut() {
+        c.color = [0.5, 0.2, 0.9];
+    }
+    cases.push(two);
+    for (i, em) in cases.iter().enumerate() {
+        assert_eq!(em.to_meshes(), reference_to_meshes(em), "case {i}");
+    }
+}

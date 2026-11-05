@@ -8,11 +8,15 @@ Model it. Paint it. Pose it. Animate it. Render it. All in one small program.
 `0.2.0-alpha` · Linux · Written in Rust · No external tools needed
 </div>
 
-![Jank! posing the butterfly demo](docs/img/pose.png)
+![Jank! with the bunny scene that opens on the first start](docs/img/bunnies.webp)
 
-| Render mode with soft shadows | Texture painting |
+| Edit mode: vertices, edges and polygons | Radial menu on `Space` |
 |---|---|
-| ![Render mode](docs/img/render.png) | ![Texture mode](docs/img/texture.png) |
+| ![Edit mode](docs/img/edit.webp) | ![Radial menu](docs/img/radial.webp) |
+| **Curves: keys and easing of the animation** | **Discord status with a live preview** |
+| ![Curves](docs/img/curves.webp) | ![Discord settings](docs/img/discord.webp) |
+| **Render mode with soft shadows** | **Texture painting** |
+| ![Render mode](docs/img/render.webp) | ![Texture mode](docs/img/texture.webp) |
 
 ---
 
@@ -59,6 +63,16 @@ You do not need to know any 3D software first. Everything has a tooltip: hold th
 
 Everything, including the renderer and the image and video encoders, is built into the program.
 
+## Download
+
+Ready-made Linux builds (x86_64) are on the [Releases page](https://github.com/wwwthresis/Jank/releases):
+
+- `Jank-<version>-x86_64.AppImage`: one file. Make it executable (`chmod +x`) and run it.
+- `jank-<version>-linux-x86_64.tar.gz`: unpack and run `./jank`. `./install.sh` adds Jank! to your applications menu (into `~/.local`, no root needed); `./install.sh --remove` takes it out again.
+- `SHA256SUMS`: check the download with `sha256sum -c SHA256SUMS`.
+
+It needs OpenGL 2.0 for the window; software Mesa is enough.
+
 ## Build from source
 
 You need Linux and the Rust toolchain (the compiler). If you do not have Rust yet:
@@ -77,11 +91,13 @@ More detail (system packages, tests, options) is in [BUILDING.md](BUILDING.md).
 
 ## Your first five minutes
 
-1. Start Jank!. Choose `File > Open project` and open `demo/butterfly.jank`. You will see a rigged butterfly flying over a meadow.
-2. Press `Shift+Space` to play the animation.
-3. Press `3` to see the skeleton, `2` to see the texture, `5` for the render look.
+1. Start Jank!. The first time, it opens the **bunny scene**: two plush bunnies on a rug, made from photos, textured and rigged. You can open it again at any time with `File > Open the bunny scene` (it never overwrites anything; *Save as* makes your own copy).
+2. Press `Shift+Space` to play the idle animation: ears, paws and feet move on their bones.
+3. Press `3` to see the skeleton, `2` to see the texture, `5` for the render look. Select a bunny and press `Tab` to see its polygons.
 4. Press `Ctrl+N` to start your own project, then `Shift+A` to add a cube.
 5. Press `2`, pick a colour and paint on the cube. Press `Ctrl+S` to save.
+
+More samples are in `demo/`: `butterfly.jank` (a rigged butterfly over a meadow) and `friend.jank` (a singing worm with a skeleton and frame-by-frame animation).
 
 Stuck? Press `Ctrl+K` and type what you want to do. A full walkthrough is in the [user guide](docs/USER_GUIDE.md).
 
@@ -116,7 +132,7 @@ Stuck? Press `Ctrl+K` and type what you want to do. A full walkthrough is in the
 ```
 core/    psxcore: the engine (geometry, renderer, codecs, project format). Standard library only.
 app/     jank: the window and interface (egui / eframe).
-demo/    sample projects.
+demo/    sample projects (bunnies.jank is also built into the program as the starter scene).
 docs/    user guide, architecture, file format, design system, versioning, Discord, roadmap, splash guide.
 tools/   helper scripts.
 ```

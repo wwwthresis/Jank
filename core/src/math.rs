@@ -342,3 +342,29 @@ mod tests {
         assert!((a - b).length() < 1e-4);
     }
 }
+
+/// `x.floor() as i32` without the library call that baseline x86-64 needs for `floor`
+/// (identical results, NaN and out-of-range values included).
+#[inline(always)]
+pub fn ifloor(x: f32) -> i32 {
+    let t = x as i32;
+    t.saturating_sub(((t as f32) > x) as i32)
+}
+
+#[cfg(test)]
+mod ifloor_tests {
+    use super::*;
+
+    #[test]
+    fn ifloor_matches_the_library() {
+        let mut x = -70000.0f32;
+        while x < 70000.0 {
+            assert_eq!(ifloor(x), x.floor() as i32, "{x}");
+            x += 0.37;
+        }
+        for x in [f32::NAN, f32::INFINITY, f32::NEG_INFINITY, 3e9, -3e9, -0.0, -0.5, 0.5, -1e-30, 2147483520.0] {
+            assert_eq!(ifloor(x), x.floor() as i32, "{x}");
+        }
+    }
+}
+

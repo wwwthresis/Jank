@@ -138,6 +138,9 @@ pub struct GlSurface {
     id: Option<egui::TextureId>,
     w: u32,
     h: u32,
+    /// Store the bytes as sRGB, exactly like egui_glow stores its own textures. Its shader turns every sampled texel
+    /// back from linear to sRGB, so a plain RGBA8 texture would be encoded twice and look washed out.
+    srgb: bool,
 }
 impl Default for GlSurface {
     fn default() -> Self {
@@ -146,7 +149,7 @@ impl Default for GlSurface {
 }
 impl GlSurface {
     pub fn new() -> Self {
-        Self { tex: None, id: None, w: 0, h: 0 }
+        Self { tex: None, id: None, w: 0, h: 0, srgb: false }
     }
     /// Creates and registers the GL texture the first time it is needed.
     pub fn ensure(&mut self, frame: &mut eframe::Frame) {
@@ -155,6 +158,9 @@ impl GlSurface {
             return;
         }
         let Some(gl) = frame.gl().cloned() else { return };
+        // The same test egui_glow uses to decide whether its textures (and its shader) are sRGB.
+        let v = gl.version();
+        self.srgb = (v.is_embedded && v.major >= 3) || gl.supported_extensions().iter().any(|e| e.contains("sRGB"));
         // SAFETY: plain GL calls on the context eframe created; the texture is handed over to egui_glow, which frees it.
         let tex = unsafe {
             let Ok(t) = gl.create_texture() else { return };
@@ -196,7 +202,8 @@ impl GlSurface {
             gl.bind_texture(glow::TEXTURE_2D, Some(t));
             gl.pixel_store_i32(glow::UNPACK_ALIGNMENT, 1);
             if self.w != w || self.h != h {
-                gl.tex_image_2d(glow::TEXTURE_2D, 0, glow::RGBA8 as i32, w as i32, h as i32, 0, glow::RGBA, glow::UNSIGNED_BYTE, data);
+                let internal = if self.srgb { glow::SRGB8_ALPHA8 } else { glow::RGBA8 };
+                gl.tex_image_2d(glow::TEXTURE_2D, 0, internal as i32, w as i32, h as i32, 0, glow::RGBA, glow::UNSIGNED_BYTE, data);
                 self.w = w;
                 self.h = h;
             } else {
@@ -215,4 +222,40 @@ pub fn screen_rect(ctx: &eframe::egui::Context) -> eframe::egui::Rect {
 pub fn centered_pos(ctx: &eframe::egui::Context, size: eframe::egui::Vec2) -> eframe::egui::Pos2 {
     let r = screen_rect(ctx);
     eframe::egui::pos2((r.center().x - size.x * 0.5).max(r.min.x), (r.center().y - size.y * 0.5).max(r.min.y))
+}
+
+/// Many thin lines and small squares collected into one mesh. Painting tens of thousands of
+/// separate line shapes (the wireframe of a heavy model) costs egui far more than this.
+#[derive(Default)]
+pub struct Batch {
+    mesh: egui::Mesh,
+}
+impl Batch {
+    /// A line of `w` pixels (one quad, no soft edge: heavy wireframes are dense anyway).
+    pub fn line(&mut self, a: Pos2, b: Pos2, w: f32, c: Color32) {
+        let d = b - a;
+        let len = d.length();
+        if len < 1e-3 || c.a() == 0 {
+            return;
+        }
+        let n = Vec2::new(-d.y, d.x) * (w * 0.5 / len);
+        let m = &mut self.mesh;
+        let i = m.vertices.len() as u32;
+        m.colored_vertex(a + n, c);
+        m.colored_vertex(a - n, c);
+        m.colored_vertex(b - n, c);
+        m.colored_vertex(b + n, c);
+        m.add_triangle(i, i + 1, i + 2);
+        m.add_triangle(i, i + 2, i + 3);
+    }
+    pub fn square(&mut self, at: Pos2, size: f32, c: Color32) {
+        if c.a() > 0 {
+            self.mesh.add_colored_rect(Rect::from_center_size(at, Vec2::splat(size)), c);
+        }
+    }
+    pub fn paint(self, p: &Painter) {
+        if !self.mesh.is_empty() {
+            p.add(egui::Shape::mesh(self.mesh));
+        }
+    }
 }

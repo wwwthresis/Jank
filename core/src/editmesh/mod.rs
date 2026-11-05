@@ -27,7 +27,8 @@ pub use ops::{DeleteKind, MergeKind};
 
 use crate::math::*;
 use crate::mesh::{Mesh, Vertex};
-use std::collections::{BTreeSet, HashMap};
+use crate::fasthash::HashMap;
+use std::collections::BTreeSet;
 
 /// An undirected edge, stored with the smaller vertex index first (see [`ek`]).
 pub type Edge = (u32, u32);
@@ -269,7 +270,7 @@ impl EditMesh {
         let mut tri_normals: Vec<[Vec3; 3]> = vec![];
         for (pi, m) in meshes.iter().enumerate() {
             em.parts.push(Part { name: m.name.clone(), material: m.material });
-            let mut weld: HashMap<(i64, i64, i64), u32> = HashMap::new();
+            let mut weld: HashMap<(i64, i64, i64), u32> = HashMap::default();
             let map: Vec<u32> = m
                 .verts
                 .iter()
@@ -332,7 +333,18 @@ impl EditMesh {
     /// Writes the polygons back as triangle meshes, one per part. Also returns, for every part,
     /// which polygon each output triangle came from (used to map picked triangles to polygons).
     pub fn to_meshes(&self) -> (Vec<Mesh>, Vec<Vec<u32>>) {
-        let fnorm: Vec<Vec3> = self.faces.iter().map(|f| newell(&self.face_points(f))).collect();
+        // Runs on every mouse step of a drag, so it avoids hashing and per-polygon allocations.
+        // The output is the same as a plain "dedupe corners in polygon order" pass.
+        let mut pts: Vec<Vec3> = Vec::new();
+        let fnorm: Vec<Vec3> = self
+            .faces
+            .iter()
+            .map(|f| {
+                pts.clear();
+                pts.extend(f.c.iter().map(|c| self.verts[c.v as usize].pos));
+                newell(&pts)
+            })
+            .collect();
         // corner ids: offset of each face's first corner
         let mut start = Vec::with_capacity(self.faces.len());
         let mut total = 0u32;
@@ -341,29 +353,36 @@ impl EditMesh {
             total += f.c.len() as u32;
         }
         let mut dsu = Dsu::new(total as usize);
-        let mut emap: HashMap<Edge, Vec<(u32, usize)>> = HashMap::new();
+        // (edge, face, corner) of every smooth polygon side, grouped by edge (faces in order)
+        let mut sides: Vec<(Edge, u32, u32)> = Vec::with_capacity(total as usize);
         for (fi, f) in self.faces.iter().enumerate() {
             if !f.smooth {
                 continue;
             }
             let n = f.c.len();
             for k in 0..n {
-                emap.entry(ek(f.c[k].v, f.c[(k + 1) % n].v)).or_default().push((fi as u32, k));
+                sides.push((ek(f.c[k].v, f.c[(k + 1) % n].v), fi as u32, k as u32));
             }
         }
-        for (e, list) in &emap {
-            if list.len() != 2 || self.sharp.contains(e) {
-                continue;
+        sides.sort_unstable();
+        let mut i = 0;
+        while i < sides.len() {
+            let mut j = i + 1;
+            while j < sides.len() && sides[j].0 == sides[i].0 {
+                j += 1;
             }
-            let ((f, k), (g, l)) = (list[0], list[1]);
-            let (nf, ng) = (self.faces[f as usize].c.len(), self.faces[g as usize].c.len());
-            let (fa, fb) = (self.faces[f as usize].c[k].v, self.faces[f as usize].c[(k + 1) % nf].v);
-            let (ga, _gb) = (self.faces[g as usize].c[l].v, self.faces[g as usize].c[(l + 1) % ng].v);
-            // the two faces see the edge in opposite directions when their winding agrees
-            let (gk_a, gk_b) = if ga == fb { ((l + 1) % ng, l) } else { (l, (l + 1) % ng) };
-            let _ = fa;
-            dsu.union(start[f as usize] + k as u32, start[g as usize] + gk_a as u32);
-            dsu.union(start[f as usize] + ((k + 1) % nf) as u32, start[g as usize] + gk_b as u32);
+            if j - i == 2 && !self.sharp.contains(&sides[i].0) {
+                let ((_, f, k), (_, g, l)) = (sides[i], sides[i + 1]);
+                let (k, l) = (k as usize, l as usize);
+                let (nf, ng) = (self.faces[f as usize].c.len(), self.faces[g as usize].c.len());
+                let fb = self.faces[f as usize].c[(k + 1) % nf].v;
+                let ga = self.faces[g as usize].c[l].v;
+                // the two faces see the edge in opposite directions when their winding agrees
+                let (gk_a, gk_b) = if ga == fb { ((l + 1) % ng, l) } else { (l, (l + 1) % ng) };
+                dsu.union(start[f as usize] + k as u32, start[g as usize] + gk_a as u32);
+                dsu.union(start[f as usize] + ((k + 1) % nf) as u32, start[g as usize] + gk_b as u32);
+            }
+            i = j;
         }
         let mut acc = vec![Vec3::ZERO; total as usize];
         for (fi, f) in self.faces.iter().enumerate() {
@@ -380,28 +399,60 @@ impl EditMesh {
             meshes.push(Mesh::new("Mesh"));
         }
         let mut tri_face: Vec<Vec<u32>> = vec![vec![]; meshes.len()];
-        let mut dedupe: Vec<HashMap<(u32, [u32; 2], [u32; 3], [u32; 3]), u32>> = vec![HashMap::new(); meshes.len()];
+        // corner dedupe: for every vertex a short chain of the distinct (part, uv, colour, normal) seen so far
+        struct Seen {
+            next: u32,
+            part: u32,
+            key: [u32; 8],
+            out: u32,
+        }
+        let mut head = vec![u32::MAX; self.verts.len()];
+        let mut seen: Vec<Seen> = Vec::with_capacity(total as usize);
+        let mut ids: Vec<u32> = Vec::new();
         for (fi, f) in self.faces.iter().enumerate() {
             if f.c.len() < 3 {
                 continue;
             }
             let part = (f.part as usize).min(meshes.len() - 1);
             let flat = fnorm[fi].normalized();
-            let ids: Vec<u32> = (0..f.c.len())
-                .map(|k| {
-                    let c = &f.c[k];
-                    let nrm = if f.smooth { acc[dsu.find(start[fi] + k as u32) as usize].normalized() } else { flat };
-                    let nrm = if nrm == Vec3::ZERO { Vec3::Y } else { nrm };
-                    let key = (c.v, [c.uv.x.to_bits(), c.uv.y.to_bits()], c.color.map(f32::to_bits), [nrm.x.to_bits(), nrm.y.to_bits(), nrm.z.to_bits()]);
-                    let mesh = &mut meshes[part];
-                    *dedupe[part].entry(key).or_insert_with(|| {
+            ids.clear();
+            for k in 0..f.c.len() {
+                let c = &f.c[k];
+                let nrm = if f.smooth { acc[dsu.find(start[fi] + k as u32) as usize].normalized() } else { flat };
+                let nrm = if nrm == Vec3::ZERO { Vec3::Y } else { nrm };
+                let key = [c.uv.x.to_bits(), c.uv.y.to_bits(), c.color[0].to_bits(), c.color[1].to_bits(), c.color[2].to_bits(), nrm.x.to_bits(), nrm.y.to_bits(), nrm.z.to_bits()];
+                let mut at = head[c.v as usize];
+                let mut found = None;
+                while at != u32::MAX {
+                    let s = &seen[at as usize];
+                    if s.part == part as u32 && s.key == key {
+                        found = Some(s.out);
+                        break;
+                    }
+                    at = s.next;
+                }
+                let id = match found {
+                    Some(id) => id,
+                    None => {
+                        let mesh = &mut meshes[part];
                         let ev = &self.verts[c.v as usize];
                         mesh.verts.push(Vertex { pos: ev.pos, nrm, uv: c.uv, color: c.color, joints: ev.joints, weights: ev.weights });
-                        (mesh.verts.len() - 1) as u32
-                    })
-                })
-                .collect();
-            for t in triangulate(&self.face_points(f)) {
+                        let out = (mesh.verts.len() - 1) as u32;
+                        seen.push(Seen { next: head[c.v as usize], part: part as u32, key, out });
+                        head[c.v as usize] = (seen.len() - 1) as u32;
+                        out
+                    }
+                };
+                ids.push(id);
+            }
+            if f.c.len() == 3 {
+                meshes[part].tris.push([ids[0], ids[1], ids[2]]);
+                tri_face[part].push(fi as u32);
+                continue;
+            }
+            pts.clear();
+            pts.extend(f.c.iter().map(|c| self.verts[c.v as usize].pos));
+            for t in triangulate(&pts) {
                 meshes[part].tris.push([ids[t[0]], ids[t[1]], ids[t[2]]]);
                 tri_face[part].push(fi as u32);
             }
@@ -438,7 +489,7 @@ impl EditMesh {
     }
 
     pub fn topo(&self) -> Topo {
-        let mut edge_faces: HashMap<Edge, Vec<u32>> = HashMap::new();
+        let mut edge_faces: HashMap<Edge, Vec<u32>> = HashMap::default();
         let mut vert_faces = vec![vec![]; self.verts.len()];
         let mut vert_nbrs: Vec<Vec<u32>> = vec![vec![]; self.verts.len()];
         let link = |a: u32, b: u32, nb: &mut Vec<Vec<u32>>| {
@@ -472,15 +523,56 @@ impl EditMesh {
         Topo { edge_faces, vert_faces, vert_nbrs }
     }
 
-    /// Every edge (polygon edges and wires) once.
+    /// Every edge (polygon edges and wires) once, in ascending order.
     pub fn all_edges(&self) -> Vec<Edge> {
-        let mut s: BTreeSet<Edge> = self.wires.clone();
+        let mut v: Vec<Edge> = Vec::with_capacity(self.faces.iter().map(|f| f.c.len()).sum::<usize>() + self.wires.len());
+        v.extend(self.wires.iter().copied());
         for f in &self.faces {
-            for (a, b) in f.edges() {
-                s.insert(ek(a, b));
-            }
+            v.extend(f.edges().map(|(a, b)| ek(a, b)));
         }
-        s.into_iter().collect()
+        v.sort_unstable();
+        v.dedup();
+        v
+    }
+
+    /// Every edge once, in ascending order, with the number of polygons using it and whether all of
+    /// them are hidden (false for loose edges). Cheaper than [`EditMesh::topo`] when only that is needed.
+    pub fn edge_table(&self) -> Vec<(Edge, u32, bool)> {
+        let mut sides: Vec<(Edge, u32)> = Vec::with_capacity(self.faces.iter().map(|f| f.c.len()).sum::<usize>());
+        for (fi, f) in self.faces.iter().enumerate() {
+            sides.extend(f.edges().map(|(a, b)| (ek(a, b), fi as u32)));
+        }
+        sides.sort_unstable();
+        let mut out: Vec<(Edge, u32, bool)> = Vec::with_capacity(sides.len() / 2 + self.wires.len());
+        let mut wires = self.wires.iter().peekable();
+        let mut i = 0;
+        while i < sides.len() || wires.peek().is_some() {
+            let e = sides.get(i).map(|s| s.0);
+            // loose edges that come before the next polygon edge
+            if let Some(&&w) = wires.peek() {
+                if e.map_or(true, |e| w < e) {
+                    out.push((w, 0, false));
+                    wires.next();
+                    continue;
+                }
+                if e == Some(w) {
+                    wires.next();
+                }
+            }
+            let e = e.unwrap();
+            let (mut n, mut hidden, mut last) = (0u32, true, u32::MAX);
+            while i < sides.len() && sides[i].0 == e {
+                let f = sides[i].1;
+                if f != last {
+                    n += 1;
+                    hidden &= self.face_hidden(f);
+                    last = f;
+                }
+                i += 1;
+            }
+            out.push((e, n, hidden));
+        }
+        out
     }
 
     pub fn add_vert(&mut self, pos: Vec3) -> u32 {
@@ -511,7 +603,7 @@ impl EditMesh {
             }
             f.c = out;
         }
-        let mut seen: std::collections::HashSet<Vec<u32>> = std::collections::HashSet::new();
+        let mut seen: crate::fasthash::HashSet<Vec<u32>> = crate::fasthash::HashSet::default();
         let mut keep_face = vec![true; self.faces.len()];
         for (i, f) in self.faces.iter().enumerate() {
             let mut key: Vec<u32> = f.verts().collect();

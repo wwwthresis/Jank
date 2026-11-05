@@ -1,4 +1,5 @@
 //! psxcore: the engine behind Jank! (std only, no GUI, no external dependencies).
+pub mod fasthash;
 pub mod math;
 pub mod mesh;
 pub mod texture;

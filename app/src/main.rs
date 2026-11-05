@@ -238,6 +238,10 @@ impl App {
         if let Some(s) = l.snapshot {
             app.dialog = Some(Dialog::Recover(s));
         }
+        // the very first start (no settings yet, nothing to open or recover) shows the starter scene instead of an empty one
+        if !settings_existed && app.ed.project.scene.objects.is_empty() && app.ed.path.is_none() && app.dialog.is_none() {
+            app.load_starter();
+        }
         app.whats_new_at_start(settings_existed);
         app
     }
@@ -296,6 +300,23 @@ impl App {
         match self.ed.save() {
             Ok(()) => self.info("Project saved"),
             Err(_) => self.dialog = Some(dialogs::browser(dialogs::Purpose::SaveProject)),
+        }
+    }
+    /// Opens the starter scene built into the program (asks first when the current project has unsaved changes).
+    pub fn open_starter(&mut self) {
+        if self.ed.dirty {
+            self.dialog = Some(Dialog::ConfirmDiscard(dialogs::After::Starter));
+        } else {
+            self.load_starter();
+        }
+    }
+    pub fn load_starter(&mut self) {
+        match Editor::open_bytes(STARTER) {
+            Ok(ed) => {
+                self.ed = ed;
+                self.info("Opened the bunny scene. Press Play in Animate mode; File > New project starts an empty one");
+            }
+            Err(e) => self.error(e),
         }
     }
     pub fn new_project(&mut self) {
@@ -404,6 +425,8 @@ impl eframe::App for App {
     }
 }
 
+/// The starter scene (`demo/bunnies.jank`, built by `core/examples/make_bunny_demo.rs`).
+const STARTER: &[u8] = include_bytes!("../../demo/bunnies.jank");
 const MAIN_SIZE: [f32; 2] = [1520.0, 920.0];
 const MAIN_MIN: [f32; 2] = [1100.0, 700.0];
 
@@ -506,4 +529,16 @@ fn main() -> eframe::Result {
         theme::apply(ctx);
         Box::new(Shell { boot, splash: with_splash.then(splash::Splash::new), app: None, settings: Some(settings), problems })
     })
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn the_built_in_starter_scene_opens_without_a_file() {
+        let ed = psxcore::editor::Editor::open_bytes(super::STARTER).expect("the starter scene opens");
+        assert!(ed.path.is_none(), "saving asks for a name, so the scene inside the program is never overwritten");
+        assert_eq!(ed.project.scene.objects.len(), 4);
+        assert!(ed.selected_object.is_some_and(|id| ed.project.scene.object(id).is_some_and(|o| ed.project.assets[o.asset].model.skeleton.is_some())), "a bunny is selected");
+        assert!(!ed.dirty);
+    }
 }

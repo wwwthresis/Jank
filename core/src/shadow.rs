@@ -147,15 +147,8 @@ fn fingerprint(casters: &[Caster], light_dir: Vec3, blob: bool, quality: ShadowQ
     h.0
 }
 
-/// `x.floor() as i32` without the library call that baseline x86-64 needs for `floor` (identical results, NaN included).
-#[inline(always)]
-fn ifloor(x: f32) -> i32 {
-    let t = x as i32;
-    t - ((t as f32) > x) as i32
-}
-
 fn worker_threads() -> usize {
-    std::thread::available_parallelism().map_or(1, |n| n.get()).clamp(1, 8)
+    crate::raster::default_threads()
 }
 
 /// A piece of geometry drawn into the map.
@@ -449,7 +442,7 @@ fn draw_depth(depth: &mut [f32], res: usize, row0: usize, t: [(f32, f32, f32); 3
             }
             if let Some((a, b, c, tex)) = &cutout {
                 let (u, v) = (w0 * a.x + w1 * b.x + w2 * c.x, w0 * a.y + w1 * b.y + w2 * c.y);
-                let (tx, ty) = (((u * tex.w as f32).floor() as i32).rem_euclid(tex.w as i32), ((v * tex.h as f32).floor() as i32).rem_euclid(tex.h as i32));
+                let (tx, ty) = ((ifloor(u * tex.w as f32)).rem_euclid(tex.w as i32), ((v * tex.h as f32).floor() as i32).rem_euclid(tex.h as i32));
                 if tex.get(tx, ty).is_some_and(|p| p[3] < 128) {
                     continue;
                 }
