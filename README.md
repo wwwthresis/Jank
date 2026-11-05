@@ -8,7 +8,7 @@ Model it. Paint it. Pose it. Animate it. Render it. All in one small program.
 `0.2.0-alpha` · Linux · Written in Rust · No external tools needed
 </div>
 
-![Jank! with the bunny scene that opens on the first start](docs/img/bunnies.webp)
+![Jank! with the bunny demo project](docs/img/bunnies.webp)
 
 | Edit mode: vertices, edges and polygons | Radial menu on `Space` |
 |---|---|
@@ -91,7 +91,7 @@ More detail (system packages, tests, options) is in [BUILDING.md](BUILDING.md).
 
 ## Your first five minutes
 
-1. Start Jank!. The first time, it opens the **bunny scene**: two plush bunnies on a rug, made from photos, textured and rigged. You can open it again at any time with `File > Open the bunny scene` (it never overwrites anything; *Save as* makes your own copy).
+1. Start Jank!. Choose `File > Open project` and open `demo/bunnies.jank`: two plush bunnies on a rug, made from photos, textured and rigged.
 2. Press `Shift+Space` to play the idle animation: ears, paws and feet move on their bones.
 3. Press `3` to see the skeleton, `2` to see the texture, `5` for the render look. Select a bunny and press `Tab` to see its polygons.
 4. Press `Ctrl+N` to start your own project, then `Shift+A` to add a cube.
@@ -132,7 +132,7 @@ Stuck? Press `Ctrl+K` and type what you want to do. A full walkthrough is in the
 ```
 core/    psxcore: the engine (geometry, renderer, codecs, project format). Standard library only.
 app/     jank: the window and interface (egui / eframe).
-demo/    sample projects (bunnies.jank is also built into the program as the starter scene).
+demo/    sample projects (bunnies, butterfly, friend).
 docs/    user guide, architecture, file format, design system, versioning, Discord, roadmap, splash guide.
 tools/   helper scripts.
 ```

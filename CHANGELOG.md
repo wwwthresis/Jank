@@ -6,9 +6,9 @@ Versions follow [docs/VERSIONING.md](docs/VERSIONING.md): `MAJOR.MINOR.PATCH[-ch
 ## 0.2.0-alpha (build 31035)
 
 ### Added
-- **Starter scene**: the first start opens two plush bunnies on a pink rug in warm evening light, made from photos of real toys (shape from the outline, photo textures front and back, skeletons with skin weights) with a short *Idle* loop of ears, paws and feet. *File → Open the bunny scene* and a *Bunny scene* button on the empty-scene card open it again; it is built into the program (`demo/bunnies.jank`), so it never changes a file. Built by `tools/bunnies/make_bunnies.py` and `core/examples/make_bunny_demo.rs`; checked by `core/tests/bunny_demo.rs`.
+- **New demo project `demo/bunnies.jank`**: two plush bunnies on a pink rug in warm evening light, made from photos of real toys (shape from the outline, photo textures front and back, skeletons with skin weights) with a short *Idle* loop of ears, paws and feet. Open it with *File → Open project*, like the butterfly. Built by `tools/bunnies/make_bunnies.py` and `core/examples/make_bunny_demo.rs`; checked by `core/tests/bunny_demo.rs`.
 - **GitHub releases**: pushing a tag `v<version>.<build>` builds and publishes a release with a `tar.gz` (program, demo scenes, `install.sh` for the applications menu, icon, `.desktop` file), an AppImage and `SHA256SUMS`; notes come from this changelog. `tools/package_release.sh` makes the same files locally. See *Making a release* in BUILDING.md.
-- `core/examples/bench_edit.rs`: times Edit mode on a heavy mesh. `Editor::open_bytes` opens a project from memory.
+- `core/examples/bench_edit.rs`: times Edit mode on a heavy mesh.
 - New screenshots in the README and the user guide (Edit mode, radial menu, Curves, the Discord card, Render, Texture).
 
 ### Changed

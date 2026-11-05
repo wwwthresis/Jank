@@ -62,9 +62,9 @@ cargo run --release --example make_butterfly_demo -- path/to/butterfly_rigged.gl
 
 The test `core/tests/butterfly_demo.rs` checks that the shipped demo opens with its skeleton, pose, layers and lighting and survives a save and reopen.
 
-## Rebuilding the bunny scene
+## Rebuilding the bunny demo
 
-The starter scene `demo/bunnies.jank` is built into the program (`include_bytes!` in `app/src/main.rs`) and opens on the first start. It is made from two photos of plush toys (they are not part of the repository):
+The demo project `demo/bunnies.jank` is made from two photos of plush toys (they are not part of the repository):
 
 ```
 pip install numpy opencv-python-headless
@@ -73,7 +73,7 @@ cd core
 cargo run --release --example make_bunny_demo -- /tmp/bunnies ../demo/bunnies.jank preview.png
 ```
 
-The Python script cuts each toy out of its photo, inflates the outline into a stuffed shape, bakes the front and back textures, and places bones and skin weights; the Rust example adds the rug, the floor, the lamp light, shadows and the idle animation. `core/tests/bunny_demo.rs` checks the shipped file (skeletons, weights, closed surfaces, the animation loop, a save and reopen). Rebuild the app afterwards so the new scene is embedded.
+The Python script cuts each toy out of its photo, inflates the outline into a stuffed shape, bakes the front and back textures, and places bones and skin weights; the Rust example adds the rug, the floor, the lamp light, shadows and the idle animation. `core/tests/bunny_demo.rs` checks the shipped file (skeletons, weights, closed surfaces, the animation loop, a save and reopen).
 
 ## Measuring Edit-mode speed
 

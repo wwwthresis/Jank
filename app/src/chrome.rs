@@ -34,7 +34,7 @@ impl App {
                 ui.add_space(6.0);
                 use CommandId::*;
                 let groups: [(&str, &[CommandId]); 8] = [
-                    ("File", &[NewProject, OpenProject, OpenStarter, SaveProject, SaveProjectAs, ImportModel, ExportOutput, Quit]),
+                    ("File", &[NewProject, OpenProject, SaveProject, SaveProjectAs, ImportModel, ExportOutput, Quit]),
                     ("Edit", &[Undo, Redo, DeleteSelected, CommandPalette, RadialMenu, OpenSettings]),
                     ("Model", &[EditModeToggle, AddCube, AddButterfly, BooleanUnion, BooleanDifference, BooleanIntersect, Subdivide, MirrorX, WeldVertices, FlatShade, AutoUv, AddReference]),
                     (

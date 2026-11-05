@@ -551,17 +551,9 @@ impl Editor {
     }
     pub fn open(path: &Path) -> Result<Editor, String> {
         let project = Project::load(path).map_err(|e| format!("Could not open \"{}\": {e}", path.display()))?;
-        Ok(Editor::with_project(project, Some(path.to_path_buf())))
-    }
-    /// Opens a project held in memory, such as the starter scene built into the program. It has no file until it is saved.
-    pub fn open_bytes(bytes: &[u8]) -> Result<Editor, String> {
-        let project = Project::from_bytes(bytes).map_err(|e| format!("Could not open the project: {e}"))?;
-        Ok(Editor::with_project(project, None))
-    }
-    fn with_project(project: Project, path: Option<std::path::PathBuf>) -> Editor {
         let mut ed = Editor::new();
         ed.project = project;
-        ed.path = path;
+        ed.path = Some(path.to_path_buf());
         // a rigged object is the likeliest thing to work on; otherwise the first one
         let rigged = ed.project.scene.objects.iter().find(|o| ed.project.assets.get(o.asset).is_some_and(|a| a.model.skeleton.is_some())).map(|o| o.id);
         ed.selected_object = rigged.or_else(|| ed.project.scene.objects.first().map(|o| o.id));
@@ -570,7 +562,7 @@ impl Editor {
         if let Some(cam) = ed.project.animations.first().and_then(|a| a.frames.first()).map(|f| f.camera).filter(|c| *c != Camera::default()) {
             ed.view = ViewCam::from_camera(&cam);
         }
-        ed
+        Ok(ed)
     }
 
     // -------------------------------------------------------------- mode and selection

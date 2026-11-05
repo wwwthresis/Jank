@@ -605,7 +605,7 @@ impl App {
     fn welcome(&mut self, ctx: &egui::Context) {
         egui::Window::new("Welcome to Jank!").collapsible(false).resizable(false).default_pos(compat::centered_pos(ctx, vec2(380.0, 160.0))).show(ctx, |ui| {
             ui.set_min_width(360.0);
-            widgets::dim(ui, "Import a model or start from a primitive, then paint right on it. Or look around the starter scene first.");
+            widgets::dim(ui, "Import a model or start from a primitive, then paint right on it.");
             ui.add_space(6.0);
             ui.horizontal_wrapped(|ui| {
                 if Btn::new("Import model").icon(crate::icons::Icon::Open).accent(accent()).show(ui).clicked() {
@@ -616,9 +616,6 @@ impl App {
                 }
                 if Btn::new("Open project").icon(crate::icons::Icon::Save).accent(accent()).show(ui).clicked() {
                     self.dialog = Some(dialogs::browser(dialogs::Purpose::OpenProject));
-                }
-                if Btn::new("Bunny scene").icon(crate::icons::Icon::Sparkle).accent(accent()).tip("Two plush bunnies on a rug: textures from photos, bones, lighting, an idle animation").show(ui).clicked() {
-                    self.load_starter();
                 }
             });
         });

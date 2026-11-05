@@ -68,7 +68,7 @@ The left panel has every tool as a button, plus subdivide, bridge, triangulate, 
 
 ## 3. Pose
 
-Imported glTF/GLB models with a skeleton can be posed (the bunnies of the starter scene have one): select a bone and rotate it with the gizmo. Turn on **inverse kinematics** (`Shift+I` or the IK cell) and drag the end of a limb: the bones above it follow; *chain bones* sets how many (1-8).
+Imported glTF/GLB models with a skeleton can be posed (the bunnies of `demo/bunnies.jank` have one): select a bone and rotate it with the gizmo. Turn on **inverse kinematics** (`Shift+I` or the IK cell) and drag the end of a limb: the bones above it follow; *chain bones* sets how many (1-8).
 
 ## 4. Animate
 
@@ -113,7 +113,7 @@ Settings and key bindings go to your XDG config folder, autosave to the XDG stat
 
 ## Trying the demo
 
-The first time Jank! starts, it opens the **bunny scene**: two plush bunnies on a pink rug in warm evening light. Both were made from photos: the outline gives the shape, the photo becomes the texture (front and back), and each has a skeleton - the cream bunny moves its ears, paws and feet in a short *Idle* loop. Open it again at any time with `File > Open the bunny scene` or the *Bunny scene* button on the empty-scene card; it is built into the program, so it never changes a file. *Save as* keeps your own copy.
+Open `demo/bunnies.jank` with `File > Open project`: two plush bunnies on a pink rug in warm evening light. Both were made from photos: the outline gives the shape, the photo becomes the texture (front and back), and each has a skeleton - the cream bunny moves its ears, paws and feet in a short *Idle* loop.
 
 Things to try: press `Shift+Space` to play, `3` to see the bones, `2` for the texture, `5` for the render, select a bunny and press `Tab` for its polygons, or open the World tab to change the light and the shadows.
 

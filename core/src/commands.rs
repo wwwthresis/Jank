@@ -14,7 +14,6 @@ pub enum CommandId {
     // File
     NewProject,
     OpenProject,
-    OpenStarter,
     SaveProject,
     SaveProjectAs,
     ImportModel,
@@ -203,7 +202,6 @@ macro_rules! cmd {
 pub const COMMANDS: &[CommandInfo] = &[
     cmd!(NewProject, "file.new", "New project", File, "Start an empty project", ["Ctrl+N"]),
     cmd!(OpenProject, "file.open", "Open project", File, "Open a .jank project from disk", ["Ctrl+O"]),
-    cmd!(OpenStarter, "file.starter", "Open the bunny scene", File, "Open the starter scene: two plush bunnies on a rug, with bones, lighting and an idle animation", []),
     cmd!(SaveProject, "file.save", "Save project", File, "Save the project; asks for a name the first time", ["Ctrl+S"]),
     cmd!(SaveProjectAs, "file.save_as", "Save project as", File, "Save a copy of the project under a new name", ["Ctrl+Shift+S"]),
     cmd!(ImportModel, "file.import", "Import model", File, "Import OBJ, STL, PLY, glTF or GLB", ["Ctrl+I"]),

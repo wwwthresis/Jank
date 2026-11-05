@@ -981,7 +981,7 @@ fn ease_editor(ui: &mut Ui, e: &mut Ease, size: f32) -> bool {
 
 /// Lines of the "What's new" window: icon, title, text, command to try it.
 const WHATS_NEW: &[(Icon, &str, &str, Option<CommandId>)] = &[
-    (Icon::Sparkle, "Starter scene: two plush bunnies", "Two real plush toys rebuilt from photos: photo textures, bones in ears, paws and feet, lamp light with soft shadows and an idle animation on a pink rug. Click here to open it (also File \u{2192} Open the bunny scene).", Some(CommandId::OpenStarter)),
+    (Icon::Sparkle, "New demo project: two plush bunnies", "Two real plush toys rebuilt from photos: photo textures, bones in ears, paws and feet, lamp light with soft shadows and an idle animation on a pink rug. Open demo/bunnies.jank with File \u{2192} Open project, like the butterfly.", Some(CommandId::OpenProject)),
     (Icon::Palette, "True colours in the viewport", "The viewport and the preview window showed every picture a little too pale. They now match the exported render exactly, on every graphics card. The Discord switches in Settings work again too.", None),
     (Icon::Vertex, "Faster Edit mode on heavy meshes", "On a 20 000-vertex mesh drawing the vertices, edges and faces, moving, extruding, selecting and undo are 2 to 5 times faster, so editing stays smooth.", Some(CommandId::EditModeToggle)),
     (Icon::Presence, "Discord status", "Show \u{201c}Playing Jank!\u{201d} on your Discord profile with the mode and what you are doing. Settings \u{2192} Discord turns it on or off and decides whether the project name is shown (hidden by default).", Some(CommandId::OpenSettings)),

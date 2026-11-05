@@ -1,4 +1,4 @@
-//! Builds the starter scene `demo/bunnies.jank`: two plush bunnies on a pink shaggy rug in a cosy evening room. The bunnies,
+//! Builds the demo project `demo/bunnies.jank`: two plush bunnies on a pink shaggy rug in a cosy evening room. The bunnies,
 //! their photo textures, bones and skin weights come from `tools/bunnies/make_bunnies.py` (run it first on the two photos);
 //! this program loads them, adds the rug and the tiled floor, the lamp light with soft shadows, and a short idle animation.
 //!

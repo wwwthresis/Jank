@@ -120,7 +120,6 @@ impl App {
         match id {
             NewProject => self.new_project(),
             OpenProject => self.dialog = Some(dialogs::browser(Purpose::OpenProject)),
-            OpenStarter => self.open_starter(),
             SaveProject => self.save(),
             SaveProjectAs => self.dialog = Some(dialogs::browser(Purpose::SaveProject)),
             ImportModel => self.dialog = Some(dialogs::browser(Purpose::ImportModel)),

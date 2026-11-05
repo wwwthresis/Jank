@@ -43,4 +43,4 @@ Shadow pass (`core/src/shadow.rs`): every casting object is drawn into a depth m
 
 ## Built-in assets
 
-`core/assets/` holds the files that are compiled into the program (`butterfly.obj`, `butterfly_texture.png`) via `include_str!` / `include_bytes!`; `modeling::butterfly()` builds the model from them. The starter scene `demo/bunnies.jank` is embedded in the app (`app/src/main.rs`, `STARTER`) and opened with `Editor::open_bytes`, so the first start needs no file on disk.
+`core/assets/` holds the files that are compiled into the program (`butterfly.obj`, `butterfly_texture.png`) via `include_str!` / `include_bytes!`; `modeling::butterfly()` builds the model from them.

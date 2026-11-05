@@ -1,4 +1,4 @@
-//! The starter scene (`demo/bunnies.jank`, opened on the first start) is complete: two rigged plush bunnies with photo
+//! The bunny demo project (`demo/bunnies.jank`) is complete: two rigged plush bunnies with photo
 //! textures, the rug and the floor, lamp light with cast shadows, a glow layer and an idle loop; it survives a round trip.
 use psxcore::lighting::ShadowMode;
 use psxcore::project::Project;
@@ -10,7 +10,7 @@ fn demo() -> Project {
 }
 
 #[test]
-fn starter_scene_has_two_rigged_bunnies() {
+fn bunny_scene_has_two_rigged_bunnies() {
     let p = demo();
     let names: Vec<&str> = p.scene.objects.iter().map(|o| o.name.as_str()).collect();
     for n in ["Floor", "Rug", "Cream bunny", "Two-headed bunny"] {
@@ -42,7 +42,7 @@ fn starter_scene_has_two_rigged_bunnies() {
 }
 
 #[test]
-fn starter_scene_surface_is_closed() {
+fn bunny_scene_surface_is_closed() {
     // front and back halves meet at the rim: every edge (by position) belongs to exactly two triangles
     let p = demo();
     for o in p.scene.objects.iter().filter(|o| o.name.contains("bunny")) {
@@ -64,7 +64,7 @@ fn starter_scene_surface_is_closed() {
 }
 
 #[test]
-fn starter_scene_animates_and_roundtrips() {
+fn bunny_scene_animates_and_roundtrips() {
     let p = demo();
     let anim = &p.animations[0];
     assert_eq!(anim.name, "Idle");
