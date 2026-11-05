@@ -23,7 +23,7 @@ fn main() {
         for (w, h) in [(320u32, 240u32), (960, 540), (1280, 720)] {
             p.scene.style = PsxStyle { width: w, height: h, ..PsxStyle::ps1_classic() };
             let mut r = Renderer::new(w, h);
-            let spec = FrameSpec { states: &states, camera: p.scene.camera, style: &p.scene.style, hand_layer: None, hand_only: false, scene_layers: true };
+            let spec = FrameSpec { states: &states, camera: p.scene.camera, style: &p.scene.style, hand_layer: None, hand_only: false, scene_layers: true, time: 0.0 };
             render_states(&p, &spec, &mut r);
             let n = if tris > 20000 { 3 } else { 10 };
             let t = Instant::now();

@@ -113,12 +113,20 @@ pub fn bevel(p: &egui::Painter, rect: egui::Rect, tint: Color32, hov: f32, selec
         fill = mix(fill, BG0(), 0.3);
     }
     let edge = if selected { mix(tint, BG0(), 0.15) } else { SHADE() };
-    p.rect_filled(rect, compat::cr(RADIUS - 1.0), fill);
+    p.rect_filled(rect, compat::cr((RADIUS() - 1.0).max(0.0)), fill);
+    let bv = bevel_amount();
+    if bv <= 0.0 {
+        if border_width() > 0.0 {
+            compat::stroke_rect(p, rect, (RADIUS() - 1.0).max(0.0), compat::stroke(border_width(), edge));
+        }
+        return;
+    }
     let inner = rect.shrink(1.0);
-    let (top, bottom) = if sunk { (alpha(SHADE(), 150), alpha(Color32::WHITE, 18)) } else { (mix(HILITE(), Color32::WHITE, 0.08 * hov), alpha(SHADE(), 170)) };
+    let k = |a: f32| (a * bv) as u8;
+    let (top, bottom) = if sunk { (alpha(SHADE(), k(150.0)), alpha(Color32::WHITE, k(18.0))) } else { (alpha(mix(HILITE(), Color32::WHITE, 0.08 * hov), k(255.0)), alpha(SHADE(), k(170.0))) };
     p.line_segment([pos2(inner.min.x + 1.0, inner.min.y + 0.5), pos2(inner.max.x - 1.0, inner.min.y + 0.5)], compat::stroke(1.0, top));
     p.line_segment([pos2(inner.min.x + 1.0, inner.max.y - 0.5), pos2(inner.max.x - 1.0, inner.max.y - 0.5)], compat::stroke(1.0, bottom));
-    compat::stroke_rect(p, rect, RADIUS - 1.0, compat::stroke(1.0, edge));
+    compat::stroke_rect(p, rect, (RADIUS() - 1.0).max(0.0), compat::stroke(border_width().max(1.0), edge));
 }
 
 /// A square tool cell for the Aseprite-style tool strip: pixel icon, sunk accent plate when active.
@@ -145,10 +153,10 @@ pub fn ribbon_button(ui: &mut Ui, icon: Icon, active: bool, tip: &str) -> Respon
     let p = ui.painter();
     let plate = egui::Rect::from_center_size(rect.center(), vec2(30.0, 30.0));
     if active {
-        p.rect_filled(plate, compat::cr(RADIUS + 1.0), alpha(accent(), 46));
+        p.rect_filled(plate, compat::cr(RADIUS() + 1.0), alpha(accent(), 46));
         p.rect_filled(egui::Rect::from_min_size(pos2(rect.min.x, plate.min.y + 5.0), vec2(2.0, plate.height() - 10.0)), compat::cr(1.0), accent());
     } else if hov > 0.0 {
-        p.rect_filled(plate, compat::cr(RADIUS + 1.0), alpha(BG3(), (hov * 255.0) as u8));
+        p.rect_filled(plate, compat::cr(RADIUS() + 1.0), alpha(BG3(), (hov * 255.0) as u8));
     }
     let ink = if active { mix(accent(), BRIGHT(), 0.35) } else { mix(mix(DIM(), TEXT(), 0.3), TEXT(), hov) };
     icons::draw(p, icon, rect.center(), 16.0, ink);
@@ -168,10 +176,10 @@ pub fn tab(ui: &mut Ui, label: &str, icon: Option<Icon>, active: bool, tip: &str
     let p = ui.painter();
     let plate = rect.shrink2(vec2(0.0, 2.0));
     if active {
-        p.rect_filled(plate, compat::cr(RADIUS + 1.0), BG3());
+        p.rect_filled(plate, compat::cr(RADIUS() + 1.0), BG3());
         p.rect_filled(egui::Rect::from_min_size(pos2(plate.min.x + 6.0, rect.max.y - 2.0), vec2(plate.width() - 12.0, 2.0)), compat::cr(1.0), accent());
     } else if resp.hovered() {
-        p.rect_filled(plate, compat::cr(RADIUS + 1.0), BG2());
+        p.rect_filled(plate, compat::cr(RADIUS() + 1.0), BG2());
     }
     let ink = if active { TEXT() } else if resp.hovered() { mix(DIM(), TEXT(), 0.6) } else { DIM() };
     let text_w = if label.is_empty() { 0.0 } else { label.chars().count() as f32 * 7.2 };
@@ -231,9 +239,9 @@ pub fn nav_item(ui: &mut Ui, icon: Icon, label: &str, active: bool, tip: &str) -
     let (rect, resp) = ui.allocate_exact_size(vec2(ui.available_width(), 28.0), Sense::click());
     let p = ui.painter();
     if active {
-        p.rect_filled(rect, compat::cr(RADIUS + 1.0), BG3());
+        p.rect_filled(rect, compat::cr(RADIUS() + 1.0), BG3());
     } else if resp.hovered() {
-        p.rect_filled(rect, compat::cr(RADIUS + 1.0), BG2());
+        p.rect_filled(rect, compat::cr(RADIUS() + 1.0), BG2());
     }
     let ink = if active { TEXT() } else { mix(DIM(), TEXT(), if resp.hovered() { 0.7 } else { 0.25 }) };
     icons::draw(p, icon, pos2(rect.min.x + 14.0, rect.center().y), 16.0, if active { mix(accent(), BRIGHT(), 0.3) } else { ink });
@@ -260,9 +268,9 @@ pub fn tree_row(ui: &mut Ui, icon: Icon, name: &str, selected: bool, eye: Option
     let eye_rect = egui::Rect::from_center_size(pos2(rect.max.x - 14.0, rect.center().y), vec2(22.0, 20.0));
     let over_eye = eye.is_some() && row.hovered() && ui.ctx().pointer_hover_pos().is_some_and(|q| eye_rect.contains(q));
     if selected {
-        p.rect_filled(rect, compat::cr(RADIUS + 1.0), alpha(accent(), 56));
+        p.rect_filled(rect, compat::cr(RADIUS() + 1.0), alpha(accent(), 56));
     } else if row.hovered() {
-        p.rect_filled(rect, compat::cr(RADIUS + 1.0), BG2());
+        p.rect_filled(rect, compat::cr(RADIUS() + 1.0), BG2());
     }
     let ink = if !visible { alpha(DIM(), 150) } else if selected { BRIGHT() } else { TEXT() };
     icons::draw(p, icon, pos2(rect.min.x + 14.0, rect.center().y), 16.0, if selected { mix(accent(), BRIGHT(), 0.45) } else { alpha(DIM(), if visible { 255 } else { 120 }) });
@@ -270,7 +278,7 @@ pub fn tree_row(ui: &mut Ui, icon: Icon, name: &str, selected: bool, eye: Option
     compat::text(&clip, pos2(rect.min.x + 28.0, rect.center().y), Align2::LEFT_CENTER, name, 13.0, ink);
     if eye.is_some() && (row.hovered() || !visible) {
         if over_eye {
-            p.rect_filled(eye_rect, compat::cr(RADIUS), BG3());
+            p.rect_filled(eye_rect, compat::cr(RADIUS()), BG3());
         }
         icons::draw(p, if visible { Icon::Eye } else { Icon::EyeOff }, eye_rect.center(), 16.0, if over_eye { TEXT() } else { DIM() });
     }
@@ -317,7 +325,18 @@ pub fn with_tip(resp: Response, tip: &str) -> Response {
     if tip.is_empty() || !tooltips_on() {
         resp
     } else {
-        resp.on_hover_text(tip)
+        resp.on_hover_ui(|ui| tooltip_body(ui, tip))
+    }
+}
+/// Tooltip text in the theme's tooltip colours (the pop-up frame itself is painted over with the tooltip fill).
+pub fn tooltip_body(ui: &mut Ui, tip: &str) {
+    let bg = ui.painter().add(egui::Shape::Noop);
+    ui.label(egui::RichText::new(tip).color(TOOLTIP_TEXT()));
+    if TOOLTIP() != WINDOW() {
+        let m = ui.style().spacing.menu_margin;
+        let r = ui.min_rect().expand2(vec2(m.left as f32, m.top as f32));
+        let rad = ui.visuals().menu_corner_radius;
+        ui.painter().set(bg, egui::Shape::rect_filled(r, rad, TOOLTIP()));
     }
 }
 

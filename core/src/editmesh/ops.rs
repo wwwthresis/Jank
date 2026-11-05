@@ -328,15 +328,17 @@ impl EditMesh {
         }
     }
 
-    /// Extrudes every selected face on its own (Alt+E → Individual faces).
-    pub fn extrude_individual(&mut self) {
+    /// Extrudes every selected face on its own (Alt+E → Individual faces). Every face keeps its
+    /// index and all of them stay selected; returns how many were extruded.
+    pub fn extrude_individual(&mut self) -> usize {
         let faces: Vec<u32> = self.sel_f.iter().copied().collect();
-        for f in faces {
+        for &f in &faces {
             let one: BTreeSet<u32> = [f].into();
             self.extrude_region(&one);
         }
-        self.sel_f = self.sel_f.iter().copied().collect();
+        self.sel_f = faces.iter().copied().collect();
         self.mode_flush_faces();
+        faces.len()
     }
 
     // ------------------------------------------------------------------ inset

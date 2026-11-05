@@ -102,18 +102,20 @@ pub fn center_window(ctx: &Context, size: [f32; 2]) {
         ctx.send_viewport_cmd(egui::ViewportCommand::OuterPosition(pos));
     }
 }
-/// Turns the splash window into the regular main window: decorations, resizable, normal size.
-pub fn enter_main(ctx: &Context, title: &str, size: [f32; 2], min: [f32; 2]) {
+/// Turns the splash window into the regular main window: resizable, normal size, with system decorations when
+/// `decorations` (otherwise Jank draws its own title bar).
+pub fn enter_main(ctx: &Context, title: &str, size: [f32; 2], min: [f32; 2], decorations: bool) {
     // at most 95% of the monitor so the window never extends past the screen
     let fit = ctx.input(|i| i.viewport().monitor_size).map_or(size, |m| [size[0].min(m.x * 0.95), size[1].min(m.y * 0.92)]);
-    ctx.send_viewport_cmd(egui::ViewportCommand::Decorations(true));
+    ctx.send_viewport_cmd(egui::ViewportCommand::Decorations(decorations));
     ctx.send_viewport_cmd(egui::ViewportCommand::MinInnerSize(Vec2::new(min[0].min(fit[0]), min[1].min(fit[1]))));
     ctx.send_viewport_cmd(egui::ViewportCommand::InnerSize(Vec2::new(fit[0], fit[1])));
     ctx.send_viewport_cmd(egui::ViewportCommand::Title(title.to_string()));
     center_window(ctx, fit);
 }
 /// Starts the app. `splash` is the splash window size: the window then starts borderless and non-resizable.
-pub fn run(title: &str, size: [f32; 2], min: [f32; 2], splash: Option<[f32; 2]>, make: impl FnOnce(&Context) -> Box<dyn eframe::App> + 'static) -> AppResult {
+/// `decorations`: the system title bar and borders of the main window (off: Jank draws its own title bar).
+pub fn run(title: &str, size: [f32; 2], min: [f32; 2], splash: Option<[f32; 2]>, decorations: bool, make: impl FnOnce(&Context) -> Box<dyn eframe::App> + 'static) -> AppResult {
     let vb = egui::ViewportBuilder::default().with_title(title);
     let vb = match splash {
         // The splash stays resizable on purpose: a non-resizable window makes Wayland compositors pin
@@ -121,7 +123,7 @@ pub fn run(title: &str, size: [f32; 2], min: [f32; 2], splash: Option<[f32; 2]>,
         // "minimum width can't be bigger than the maximum width" (xdg_toplevel error 2).
         // Without decorations nobody can resize it anyway.
         Some(s) => vb.with_inner_size(s).with_decorations(false).with_resizable(true),
-        None => vb.with_inner_size(size).with_min_inner_size(min),
+        None => vb.with_inner_size(size).with_min_inner_size(min).with_decorations(decorations),
     };
     let opts = eframe::NativeOptions { viewport: vb, ..Default::default() };
     eframe::run_native(title, opts, Box::new(move |cc| Ok(make(&cc.egui_ctx))))

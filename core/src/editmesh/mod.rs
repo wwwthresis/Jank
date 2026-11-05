@@ -19,6 +19,7 @@ mod bevel;
 mod boolean;
 mod ops;
 mod select;
+mod shape;
 mod uv;
 
 pub use bevel::BevelOptions;

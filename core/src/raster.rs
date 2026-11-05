@@ -97,7 +97,111 @@ pub struct PsxStyle {
     pub vignette: f32,
     pub scanlines: f32,
     pub grain: f32,
+    // modern touches: all off in the classic presets. Stored in the `LOOK` block of a project, so older versions still open the file.
+    /// Lamps are lit per pixel (smooth pools of light) instead of per vertex (PS1 style).
+    pub pixel_lights: bool,
+    /// How bright colours roll off instead of clipping.
+    pub tonemap: Tonemap,
+    /// Brightness before the tone curve (with a tone curve on).
+    pub exposure: f32,
+    /// Glow around bright parts of the picture: strength 0..1, threshold 0..1 (brightness where it starts), radius 0..1.
+    pub bloom: f32,
+    pub bloom_threshold: f32,
+    pub bloom_radius: f32,
+    /// Ambient occlusion: soft contact shadows in creases and corners. Strength 0..1 and reach in world units.
+    pub ao: f32,
+    pub ao_radius: f32,
+    /// Strength of the glow drawn around lamps (multiplies each lamp's own halo).
+    pub halo: f32,
+    /// CRT screen: bulge of the glass 0..1, shadow mask (RGB stripes) 0..1 and colour fringes 0..1.
+    pub crt_curve: f32,
+    pub crt_mask: f32,
+    pub chroma: f32,
 }
+
+/// The curve that maps bright colours to the screen.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Tonemap {
+    /// Plain clipping, like the original hardware.
+    Off,
+    /// Colours below 75 % stay exactly as they are; brighter ones roll off smoothly.
+    Soft,
+    /// Film-like curve (ACES fit): richer mid-tones, highlights that never burn out.
+    Filmic,
+}
+impl Tonemap {
+    pub const ALL: [Tonemap; 3] = [Tonemap::Off, Tonemap::Soft, Tonemap::Filmic];
+    pub fn label(self) -> &'static str {
+        match self {
+            Tonemap::Off => "Off",
+            Tonemap::Soft => "Soft",
+            Tonemap::Filmic => "Filmic",
+        }
+    }
+    pub fn id(self) -> u8 {
+        self as u8
+    }
+    pub fn from_id(v: u8) -> Tonemap {
+        match v {
+            1 => Tonemap::Soft,
+            2 => Tonemap::Filmic,
+            _ => Tonemap::Off,
+        }
+    }
+    /// The curve for a brightness `v` (1 = white before the curve, up to 4) with `exposure`; returns 0..1.
+    pub fn apply(self, v: f32, exposure: f32) -> f32 {
+        let v = v.max(0.0);
+        match self {
+            Tonemap::Off => v.min(1.0),
+            Tonemap::Soft => {
+                let v = v * exposure;
+                let knee = 0.75;
+                if v <= knee {
+                    v
+                } else {
+                    knee + (1.0 - knee) * (1.0 - (-(v - knee) / (1.0 - knee)).exp())
+                }
+            }
+            Tonemap::Filmic => {
+                let x = v.powf(2.2) * exposure;
+                let m = (x * (2.51 * x + 0.03)) / (x * (2.43 * x + 0.59) + 0.14);
+                m.clamp(0.0, 1.0).powf(1.0 / 2.2)
+            }
+        }
+    }
+}
+
+/// Upper limit for the costly effects in pictures drawn by one renderer (the editing viewport).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum EffectsCap {
+    /// Everything the style asks for.
+    Full,
+    /// No ambient occlusion and no bloom; lamps per vertex.
+    Light,
+    /// None of the modern touches (tone curve, glow, occlusion, CRT); lamps per vertex.
+    Off,
+}
+impl EffectsCap {
+    /// The style to draw with when the scene asks for `s`.
+    pub fn limit(self, s: &PsxStyle) -> Option<PsxStyle> {
+        match self {
+            EffectsCap::Full => None,
+            EffectsCap::Light => {
+                if s.ao == 0.0 && s.bloom == 0.0 && !s.pixel_lights {
+                    return None;
+                }
+                Some(PsxStyle { ao: 0.0, bloom: 0.0, pixel_lights: false, ..s.clone() })
+            }
+            EffectsCap::Off => {
+                if !s.modern() {
+                    return None;
+                }
+                Some(PsxStyle { ao: 0.0, bloom: 0.0, pixel_lights: false, tonemap: Tonemap::Off, halo: 0.0, crt_curve: 0.0, crt_mask: 0.0, chroma: 0.0, ..s.clone() })
+            }
+        }
+    }
+}
+
 impl Default for PsxStyle {
     fn default() -> Self {
         Self::ps1_classic()
@@ -130,7 +234,25 @@ impl PsxStyle {
             vignette: 0.0,
             scanlines: 0.0,
             grain: 0.0,
+            pixel_lights: false,
+            tonemap: Tonemap::Off,
+            exposure: 1.0,
+            bloom: 0.0,
+            bloom_threshold: 0.7,
+            bloom_radius: 0.5,
+            ao: 0.0,
+            ao_radius: 0.6,
+            halo: 1.0,
+            crt_curve: 0.0,
+            crt_mask: 0.0,
+            chroma: 0.0,
         }
+    }
+    /// True if any of the modern touches is on (they are saved in a block of their own).
+    pub fn modern(&self) -> bool {
+        let b = Self::base("");
+        self.pixel_lights || self.tonemap != Tonemap::Off || self.exposure != b.exposure || self.bloom != 0.0 || self.bloom_threshold != b.bloom_threshold || self.bloom_radius != b.bloom_radius
+            || self.ao != 0.0 || self.ao_radius != b.ao_radius || self.halo != b.halo || self.crt_curve != 0.0 || self.crt_mask != 0.0 || self.chroma != 0.0
     }
     pub fn ps1_classic() -> Self {
         Self::base("PS1 Classic")
@@ -187,8 +309,54 @@ impl PsxStyle {
             ..Self::base("Horror Fog")
         }
     }
+    /// "Beautiful retro": the PS1 look with smooth lamp light, a film curve, glow and soft contact shadows.
+    pub fn night_glow() -> Self {
+        Self {
+            width: 480,
+            height: 270,
+            fog_near: 7.0,
+            fog_far: 30.0,
+            fog_color: [0.10, 0.11, 0.20],
+            ambient: [0.30, 0.32, 0.44],
+            light_color: [0.42, 0.50, 0.72],
+            bg_top: [0.03, 0.04, 0.10],
+            bg_bottom: [0.16, 0.14, 0.28],
+            saturation: 1.08,
+            vignette: 0.35,
+            grain: 0.03,
+            pixel_lights: true,
+            tonemap: Tonemap::Filmic,
+            exposure: 1.1,
+            bloom: 0.55,
+            bloom_threshold: 0.62,
+            bloom_radius: 0.55,
+            ao: 0.6,
+            ao_radius: 0.7,
+            halo: 1.0,
+            ..Self::base("Night Glow")
+        }
+    }
+    /// An arcade monitor: curved glass, RGB shadow mask, colour fringes and scanlines.
+    pub fn crt_arcade() -> Self {
+        Self {
+            width: 320,
+            height: 240,
+            scanlines: 0.3,
+            vignette: 0.3,
+            saturation: 1.15,
+            contrast: 1.08,
+            brightness: 1.08,
+            tonemap: Tonemap::Soft,
+            bloom: 0.35,
+            bloom_threshold: 0.7,
+            crt_curve: 0.55,
+            crt_mask: 0.45,
+            chroma: 0.35,
+            ..Self::base("CRT Arcade")
+        }
+    }
     pub fn presets() -> Vec<PsxStyle> {
-        vec![Self::ps1_classic(), Self::lofi_calm(), Self::clean_lowpoly(), Self::horror_fog()]
+        vec![Self::ps1_classic(), Self::lofi_calm(), Self::clean_lowpoly(), Self::horror_fog(), Self::night_glow(), Self::crt_arcade()]
     }
 }
 
@@ -387,14 +555,21 @@ struct CV {
     uv: [f32; 2],
     shade: [f32; 3],
     fog: f32,
+    /// World position, normal and base colour (only filled for triangles whose lamps are lit per pixel).
+    wn: [f32; 9],
 }
 fn lerp_cv(a: &CV, b: &CV, t: f32) -> CV {
     let l = |x: f32, y: f32| x + (y - x) * t;
+    let mut wn = [0.0; 9];
+    for (i, o) in wn.iter_mut().enumerate() {
+        *o = l(a.wn[i], b.wn[i]);
+    }
     CV {
         clip: [l(a.clip[0], b.clip[0]), l(a.clip[1], b.clip[1]), l(a.clip[2], b.clip[2]), l(a.clip[3], b.clip[3])],
         uv: [l(a.uv[0], b.uv[0]), l(a.uv[1], b.uv[1])],
         shade: [l(a.shade[0], b.shade[0]), l(a.shade[1], b.shade[1]), l(a.shade[2], b.shade[2])],
         fog: l(a.fog, b.fog),
+        wn,
     }
 }
 /// Near-plane clipping (z + w >= 0 in clip space). A clipped triangle has at most 4 vertices.
@@ -436,20 +611,35 @@ struct Tri {
     tri: u32,
     tex: Option<usize>,
     key_black: bool,
-    /// How much the light falls on this triangle (0 = turned away from it, 1 = facing it); shadows fade out on unlit surfaces.
+    /// How much the sun falls on this triangle (0 = turned away from it, 1 = facing it); shadows fade out on unlit surfaces
+    /// and where lamps are much brighter than the sun.
     lit: f32,
     sort: f32,
+    /// Index into the per-pixel lamp data (`NO_PX` = lamps, if any, are in the vertex colours).
+    px: u32,
+}
+const NO_PX: u32 = u32::MAX;
+
+/// Corners of a triangle whose lamps are lit per pixel: world position, normal and base colour, and the lamps that reach it.
+#[derive(Clone, Copy)]
+struct PxTri {
+    wn: [[f32; 9]; 3],
+    ids: [u8; crate::lights::MAX_PER_MESH],
+    n: u8,
+    two_sided: bool,
 }
 
 const DITHER: [[i32; 4]; 4] = [[-4, 0, -3, 1], [2, -2, 3, -1], [-3, 1, -4, 0], [3, -1, 2, -2]];
 /// Sub-pixel precision of the rasterizer: coordinates are rounded to 1/256 pixel and edge tests are exact integer arithmetic.
 const FP: f64 = 256.0;
+/// Entries of the tone-curve table: brightness 0..4 (times 255) in steps of about one.
+const TONE_N: usize = 1024;
 
 /// Vertex-stage data of one mesh of one instance, shared by the triangle builders.
 struct MeshJob<'a> {
     mesh: &'a Mesh,
     wpos: Vec<Vec3>,
-    /// Per vertex: colour * material * tint, cos(normal, light) and fog factor, computed once per vertex (not per triangle corner).
+    /// Per vertex: colour * material * tint, cos(normal, light), fog factor and lamp light, computed once per vertex (not per triangle corner).
     vert: Vec<VertOut>,
     clips: Vec<[f32; 4]>,
     mat: Material,
@@ -457,6 +647,10 @@ struct MeshJob<'a> {
     inst: u16,
     mesh_i: u16,
     obj: u16,
+    /// Lamps that reach this mesh.
+    ids: Vec<u8>,
+    /// Lamps are added per pixel instead of per vertex.
+    pixel: bool,
 }
 
 #[derive(Clone, Copy)]
@@ -464,6 +658,10 @@ struct VertOut {
     base: [f32; 3],
     ndl: f32,
     fog: f32,
+    /// Light of the lamps at this vertex.
+    pl: [f32; 3],
+    /// World normal.
+    n: Vec3,
 }
 
 struct Setup<'a> {
@@ -472,6 +670,8 @@ struct Setup<'a> {
     ldir: Vec3,
     w: u32,
     h: u32,
+    /// Brightest a surface can get (higher with a tone curve, which rolls the highlights off).
+    cap: f32,
 }
 
 /// A picture (any size) blended over or under the 3D scene. It is sampled nearest-neighbour at the render size.
@@ -543,8 +743,13 @@ pub struct Renderer {
     pub shadow: Option<crate::shadow::ShadowInput>,
     /// Upper limit for the scene's shadows in pictures drawn by this renderer (the editing viewport); `None` = exactly as the scene says.
     pub shadow_cap: Option<crate::lighting::ShadowCap>,
+    /// Lamps for the next `render_layered` call, in world space (taken by it, like `shadow`).
+    pub lights: Vec<crate::lights::LiveLight>,
+    /// Upper limit for the costly picture effects (the editing viewport); `None` = exactly as the style says.
+    pub effects_cap: Option<EffectsCap>,
     // buffers reused between frames
     bands: Vec<Vec<u32>>,
+    pxs: Vec<PxTri>,
 }
 
 /// How many worker threads this machine can use sensibly (all logical cores, at most 16).
@@ -552,9 +757,14 @@ pub fn default_threads() -> usize {
     std::thread::available_parallelism().map_or(1, |n| n.get()).clamp(1, 16)
 }
 
+/// True if all eight corners lie outside one side of the view volume (left, right, top, bottom or behind the near plane).
+fn box_outside(c: &[[f32; 4]; 8]) -> bool {
+    c.iter().all(|p| p[0] > p[3]) || c.iter().all(|p| p[0] < -p[3]) || c.iter().all(|p| p[1] > p[3]) || c.iter().all(|p| p[1] < -p[3]) || c.iter().all(|p| p[2] < -p[3])
+}
+
 impl Renderer {
     pub fn new(w: u32, h: u32) -> Self {
-        Self { frame: Frame::new(w, h), threads: default_threads(), layer_aspect: None, shadow: None, shadow_cap: None, bands: Vec::new() }
+        Self { frame: Frame::new(w, h), threads: default_threads(), layer_aspect: None, shadow: None, shadow_cap: None, lights: Vec::new(), effects_cap: None, bands: Vec::new(), pxs: Vec::new() }
     }
 
     pub fn render(&mut self, style: &PsxStyle, cam: &Camera, insts: &[Instance]) {
@@ -564,25 +774,56 @@ impl Renderer {
     /// Like [`Renderer::render`], with pictures behind (`back`, drawn over the sky) and in front of (`front`) the 3D objects.
     /// Both are blended before the post effects (colour depth, grain, scanlines), so they share the look of the scene.
     pub fn render_layered(&mut self, style: &PsxStyle, cam: &Camera, insts: &[Instance], back: &[Plane], front: &[Plane]) {
+        let capped = self.effects_cap.and_then(|c| c.limit(style));
+        let style: &PsxStyle = capped.as_ref().unwrap_or(style);
+        let lights = std::mem::take(&mut self.lights);
         let (w, h) = (style.width.max(1), style.height.max(1));
         if self.frame.w != w || self.frame.h != h {
             self.frame = Frame::new(w, h);
         }
         let view = cam.view();
         let vp = cam.proj(w as f32 / h as f32) * view;
-        let setup = Setup { style, eye: cam.eye, ldir: -style.light_dir.normalized(), w, h };
+        let cap = if style.tonemap == Tonemap::Off { 2.0 } else { 4.0 };
+        let setup = Setup { style, eye: cam.eye, ldir: -style.light_dir.normalized(), w, h, cap };
         let threads = self.threads.max(1);
 
         // ---- vertex stage + triangle setup (parallel over triangle chunks, deterministic order)
         let mut tris = std::mem::take(&mut self.frame.tris);
         tris.clear();
+        let mut pxs = std::mem::take(&mut self.pxs);
+        pxs.clear();
+        let mut push = |tris: &mut Vec<Tri>, part: (Vec<Tri>, Vec<PxTri>)| {
+            let off = pxs.len() as u32;
+            pxs.extend(part.1);
+            tris.extend(part.0.into_iter().map(|mut t| {
+                if t.px != NO_PX {
+                    t.px += off;
+                }
+                t
+            }));
+        };
         for (ii, inst) in insts.iter().enumerate() {
             for (mi, mesh) in inst.model.meshes.iter().enumerate() {
                 let (Some(pos), Some(nrm)) = (inst.pos.get(mi), inst.nrm.get(mi)) else { continue };
-                if pos.len() != mesh.verts.len() || nrm.len() != mesh.verts.len() {
+                if pos.len() != mesh.verts.len() || nrm.len() != mesh.verts.len() || pos.is_empty() {
+                    continue;
+                }
+                // a mesh whose box lies outside the view costs nothing more
+                let (lo, hi) = pos.iter().fold((pos[0], pos[0]), |(a, b), p| (a.min(*p), b.max(*p)));
+                let corners: [Vec3; 8] = std::array::from_fn(|k| inst.world.transform_point(Vec3::new(if k & 1 == 0 { lo.x } else { hi.x }, if k & 2 == 0 { lo.y } else { hi.y }, if k & 4 == 0 { lo.z } else { hi.z })));
+                let cc: [[f32; 4]; 8] = std::array::from_fn(|k| vp.mul_vec4([corners[k].x, corners[k].y, corners[k].z, 1.0]));
+                if box_outside(&cc) {
                     continue;
                 }
                 let mat = inst.model.materials.get(mesh.material).cloned().unwrap_or_default();
+                let ids = if lights.is_empty() || mat.unlit {
+                    Vec::new()
+                } else {
+                    let (wlo, whi) = corners.iter().fold((corners[0], corners[0]), |(a, b), p| (a.min(*p), b.max(*p)));
+                    crate::lights::affecting(&lights, wlo, whi)
+                };
+                let pixel = style.pixel_lights && !ids.is_empty();
+                let two_sided = mat.double_sided;
                 let tex_idx = mat.texture.filter(|&t| t < inst.textures.len());
                 let wpos: Vec<Vec3> = pos.iter().map(|p| inst.world.transform_point(*p)).collect();
                 let clips: Vec<[f32; 4]> = wpos.iter().map(|p| vp.mul_vec4([p.x, p.y, p.z, 1.0])).collect();
@@ -591,13 +832,10 @@ impl Renderer {
                         .map(|vi| {
                             let v = &mesh.verts[vi];
                             let n = inst.world.transform_dir(nrm[vi]).normalized();
-                            let fog = if style.fog_on {
-                                let depth = -view.transform_point(wpos[vi]).z;
-                                ((depth - style.fog_near) / (style.fog_far - style.fog_near).max(1e-3)).clamp(0.0, 1.0)
-                            } else {
-                                0.0
-                            };
-                            VertOut { base: [v.color[0] * mat.color[0] * inst.tint[0], v.color[1] * mat.color[1] * inst.tint[1], v.color[2] * mat.color[2] * inst.tint[2]], ndl: n.dot(setup.ldir), fog }
+                            // clip w is the distance along the view direction
+                            let fog = if style.fog_on { ((clips[vi][3] - style.fog_near) / (style.fog_far - style.fog_near).max(1e-3)).clamp(0.0, 1.0) } else { 0.0 };
+                            let pl = if ids.is_empty() { [0.0; 3] } else { crate::lights::sum_at(&lights, &ids, wpos[vi], n, two_sided) };
+                            VertOut { base: [v.color[0] * mat.color[0] * inst.tint[0], v.color[1] * mat.color[1] * inst.tint[1], v.color[2] * mat.color[2] * inst.tint[2]], ndl: n.dot(setup.ldir), fog, pl, n }
                         })
                         .collect()
                 };
@@ -612,11 +850,11 @@ impl Renderer {
                 } else {
                     vert_stage(0..nv)
                 };
-                let job = MeshJob { mesh, wpos, vert, clips, mat, tex_idx, inst: ii as u16, mesh_i: mi as u16, obj: inst.id };
+                let job = MeshJob { mesh, wpos, vert, clips, mat, tex_idx, inst: ii as u16, mesh_i: mi as u16, obj: inst.id, ids, pixel };
                 let n = mesh.tris.len();
                 if threads > 1 && n >= 4096 {
                     let chunk = n.div_ceil(threads);
-                    let parts: Vec<Vec<Tri>> = std::thread::scope(|sc| {
+                    let parts: Vec<(Vec<Tri>, Vec<PxTri>)> = std::thread::scope(|sc| {
                         let handles: Vec<_> = (0..n).step_by(chunk).map(|s| {
                             let (job, setup) = (&job, &setup);
                             sc.spawn(move || build_tris(job, setup, s..(s + chunk).min(n)))
@@ -624,10 +862,10 @@ impl Renderer {
                         handles.into_iter().map(|h| h.join().expect("triangle setup thread")).collect()
                     });
                     for p in parts {
-                        tris.extend(p);
+                        push(&mut tris, p);
                     }
                 } else {
-                    tris.extend(build_tris(&job, &setup, 0..n));
+                    push(&mut tris, build_tris(&job, &setup, 0..n));
                 }
             }
         }
@@ -662,6 +900,12 @@ impl Renderer {
         let mut rows = RowTables::new(style, h);
         rows.back = back.iter().filter_map(|p| PlaneJob::new(p, w, h, self.layer_aspect)).collect();
         rows.front = front.iter().filter_map(|p| PlaneJob::new(p, w, h, self.layer_aspect)).collect();
+        rows.lights = &lights;
+        rows.pxs = &pxs;
+        rows.cap = cap;
+        let halos = style.halo > 0.0 && lights.iter().any(|l| l.halo > 0.0);
+        // effects that need the whole picture (neighbouring rows) run after all bands are drawn
+        rows.late = style.ao > 0.0 || style.bloom > 0.0 || halos || style.crt_curve > 0.0 || style.chroma > 0.0 || style.crt_mask > 0.0;
         let shadow_in = self.shadow.take();
         if let Some(s) = &shadow_in {
             let fog = style.fog_on.then_some((style.fog_near, style.fog_far));
@@ -696,7 +940,31 @@ impl Renderer {
                 }
             });
         }
+        if rows.late {
+            let f = &mut self.frame;
+            if style.ao > 0.0 {
+                crate::effects::ambient_occlusion(f, cam, style, &rows.qlut, threads);
+            }
+            if halos {
+                crate::effects::halos(f, cam, &vp, style, &lights);
+            }
+            if style.bloom > 0.0 {
+                crate::effects::bloom(f, style, threads);
+            }
+            let front = &rows.front;
+            crate::effects::par_rows(&mut f.color, wu, threads, |c, y0| {
+                if !front.is_empty() {
+                    blend_planes(c, y0 as i32, w, h, front);
+                }
+                post_rows(style, c, w, h, y0 as i32);
+            });
+            if style.crt_curve > 0.0 || style.chroma > 0.0 || style.crt_mask > 0.0 {
+                crate::effects::crt(f, style, threads);
+            }
+        }
+        drop(rows);
         self.frame.tris = tris;
+        self.pxs = pxs;
     }
 }
 
@@ -714,45 +982,70 @@ fn tri_rows(t: &Tri, h: i32) -> (i32, i32) {
     (y0, y1)
 }
 
+#[inline]
+fn luma(c: [f32; 3]) -> f32 {
+    0.3 * c[0] + 0.59 * c[1] + 0.11 * c[2]
+}
+
 /// Vertex shading, near-plane clipping, projection and snapping for one range of a mesh's triangles.
-fn build_tris(job: &MeshJob, st: &Setup, range: std::ops::Range<usize>) -> Vec<Tri> {
+fn build_tris(job: &MeshJob, st: &Setup, range: std::ops::Range<usize>) -> (Vec<Tri>, Vec<PxTri>) {
     let (style, mat) = (st.style, &job.mat);
     let (w, h) = (st.w as f32, st.h as f32);
     let mut out = Vec::with_capacity(range.len());
+    let mut pxs = Vec::new();
+    let sun_l = luma(style.light_color);
+    let mut ids = [0u8; crate::lights::MAX_PER_MESH];
+    let nids = job.ids.len().min(crate::lights::MAX_PER_MESH);
+    ids[..nids].copy_from_slice(&job.ids[..nids]);
     for ti in range {
         let t = job.mesh.tris[ti];
-        let ids = [t[0] as usize, t[1] as usize, t[2] as usize];
-        if ids.iter().any(|&i| i >= job.wpos.len()) {
+        let idx = [t[0] as usize, t[1] as usize, t[2] as usize];
+        if idx.iter().any(|&i| i >= job.wpos.len()) {
             continue;
         }
-        let (a, b, c) = (job.wpos[ids[0]], job.wpos[ids[1]], job.wpos[ids[2]]);
+        let (a, b, c) = (job.wpos[idx[0]], job.wpos[idx[1]], job.wpos[idx[2]]);
         let front = (b - a).cross(c - a).dot(st.eye - a) > 0.0;
         if !front && !mat.double_sided {
             continue;
         }
         // trivially outside one side of the view volume: nothing of this triangle can be visible
-        let cl = [job.clips[ids[0]], job.clips[ids[1]], job.clips[ids[2]]];
+        let cl = [job.clips[idx[0]], job.clips[idx[1]], job.clips[idx[2]]];
         if cl.iter().all(|p| p[0] > p[3]) || cl.iter().all(|p| p[0] < -p[3]) || cl.iter().all(|p| p[1] > p[3]) || cl.iter().all(|p| p[1] < -p[3]) {
             continue;
         }
         let sign = if front { 1.0 } else { -1.0 };
-        let mut cvs = [CV { clip: [0.0; 4], uv: [0.0; 2], shade: [0.0; 3], fog: 0.0 }; 3];
+        let mut cvs = [CV { clip: [0.0; 4], uv: [0.0; 2], shade: [0.0; 3], fog: 0.0, wn: [0.0; 9] }; 3];
         let mut lit_sum = 0.0f32;
         for k in 0..3 {
-            let vi = ids[k];
+            let vi = idx[k];
             let (v, o) = (&job.mesh.verts[vi], &job.vert[vi]);
+            let d = (o.ndl * sign).max(0.0);
             let shade = if mat.unlit {
                 o.base
             } else {
-                let d = (o.ndl * sign).max(0.0);
+                let add = if job.pixel { [0.0; 3] } else { o.pl };
                 [
-                    o.base[0] * (style.ambient[0] + style.light_color[0] * d).min(2.0),
-                    o.base[1] * (style.ambient[1] + style.light_color[1] * d).min(2.0),
-                    o.base[2] * (style.ambient[2] + style.light_color[2] * d).min(2.0),
+                    o.base[0] * (style.ambient[0] + style.light_color[0] * d + add[0]).min(st.cap),
+                    o.base[1] * (style.ambient[1] + style.light_color[1] * d + add[1]).min(st.cap),
+                    o.base[2] * (style.ambient[2] + style.light_color[2] * d + add[2]).min(st.cap),
                 ]
             };
-            lit_sum += if mat.unlit { 1.0 } else { (o.ndl * sign).max(0.0) };
-            cvs[k] = CV { clip: job.clips[vi], uv: [v.uv.x, v.uv.y], shade, fog: o.fog };
+            let sun = if mat.unlit { 1.0 } else { d };
+            // where lamps are much brighter than the sun, the sun's shadow fades
+            let lamp = luma(o.pl);
+            lit_sum += if lamp > 0.0 {
+                let s = sun * sun_l;
+                sun * s / (s + lamp).max(1e-6)
+            } else {
+                sun
+            };
+            let wn = if job.pixel {
+                let p = job.wpos[vi];
+                [p.x, p.y, p.z, o.n.x, o.n.y, o.n.z, o.base[0], o.base[1], o.base[2]]
+            } else {
+                [0.0; 9]
+            };
+            cvs[k] = CV { clip: job.clips[vi], uv: [v.uv.x, v.uv.y], shade, fog: o.fog, wn };
         }
         let lit = lit_sum / 3.0;
         let (poly, n) = clip_near(cvs);
@@ -771,13 +1064,15 @@ fn build_tris(job: &MeshJob, st: &Setup, range: std::ops::Range<usize>) -> Vec<T
             *sv = SV { x: sx, y: sy, z: c.clip[2] * iw, iw, uv: c.uv, shade: c.shade, fog: c.fog };
         }
         for k in 1..n - 1 {
-            let (v0, mut v1, mut v2) = (svs[0], svs[k], svs[k + 1]);
+            let (mut i1, mut i2) = (k, k + 1);
+            let (v0, mut v1, mut v2) = (svs[0], svs[i1], svs[i2]);
             let area = (v1.x - v0.x) * (v2.y - v0.y) - (v1.y - v0.y) * (v2.x - v0.x);
             if area == 0.0 {
                 continue;
             }
             if area < 0.0 {
                 std::mem::swap(&mut v1, &mut v2);
+                std::mem::swap(&mut i1, &mut i2);
             }
             // completely outside the screen after projection
             let (minx, maxx) = (v0.x.min(v1.x).min(v2.x), v0.x.max(v1.x).max(v2.x));
@@ -786,10 +1081,16 @@ fn build_tris(job: &MeshJob, st: &Setup, range: std::ops::Range<usize>) -> Vec<T
                 continue;
             }
             let sort = (1.0 / v0.iw + 1.0 / v1.iw + 1.0 / v2.iw) / 3.0;
-            out.push(Tri { v: [v0, v1, v2], obj: job.obj, inst: job.inst, mesh: job.mesh_i, tri: ti as u32, tex: job.tex_idx, key_black: mat.color_key, lit, sort });
+            let px = if job.pixel {
+                pxs.push(PxTri { wn: [poly[0].wn, poly[i1].wn, poly[i2].wn], ids, n: nids as u8, two_sided: mat.double_sided });
+                (pxs.len() - 1) as u32
+            } else {
+                NO_PX
+            };
+            out.push(Tri { v: [v0, v1, v2], obj: job.obj, inst: job.inst, mesh: job.mesh_i, tri: ti as u32, tex: job.tex_idx, key_black: mat.color_key, lit, sort, px });
         }
     }
-    out
+    (out, pxs)
 }
 
 /// Per-frame lookup tables shared by all bands.
@@ -800,8 +1101,15 @@ struct RowTables<'a> {
     bg: Vec<[u8; 4]>,
     /// Output value for every 8-bit channel value after quantization to `color_bits`.
     qlut: [u8; 256],
+    /// The tone curve: brightness (0..4 times 255, in `TONE_N` steps) to 0..255; `None` = plain clipping.
+    tone: Option<Vec<f32>>,
     /// Shadows to apply to what the model drew (before the layers in front and the post effects).
     shadow: Option<crate::shadow::ShadowPass<'a>>,
+    lights: &'a [crate::lights::LiveLight],
+    pxs: &'a [PxTri],
+    cap: f32,
+    /// Layers in front and the post effects wait for the picture-wide effects.
+    late: bool,
 }
 impl<'a> RowTables<'a> {
     fn new(style: &PsxStyle, h: u32) -> Self {
@@ -817,7 +1125,8 @@ impl<'a> RowTables<'a> {
         for (v, o) in qlut.iter_mut().enumerate() {
             *o = if bits >= 8 { v as u8 } else { (((v as u32) >> (8 - bits)) * 255 / ((1u32 << bits) - 1)) as u8 };
         }
-        Self { back: Vec::new(), front: Vec::new(), bg, qlut, shadow: None }
+        let tone = (style.tonemap != Tonemap::Off).then(|| (0..TONE_N).map(|i| style.tonemap.apply(i as f32 / (TONE_N - 1) as f32 * 4.0, style.exposure) * 255.0).collect());
+        Self { back: Vec::new(), front: Vec::new(), bg, qlut, tone, shadow: None, lights: &[], pxs: &[], cap: 2.0, late: false }
     }
 }
 
@@ -850,6 +1159,9 @@ fn draw_band(j: BandJob, tris: &[Tri], insts: &[Instance], style: &PsxStyle, row
     if let Some(sp) = &rows.shadow {
         sp.apply(j.color, j.depth, j.tri_at, j.y0, w, h, &rows.qlut, &|ti| tris[ti as usize].lit);
     }
+    if rows.late {
+        return;
+    }
     if !rows.front.is_empty() {
         blend_planes(j.color, j.y0, w, h, &rows.front);
     }
@@ -872,6 +1184,10 @@ fn floor_div(a: i64, b: i64) -> i64 {
 fn ceil_div(a: i64, b: i64) -> i64 {
     -((-a).div_euclid(b))
 }
+
+/// Attributes interpolated across a triangle: z, u, v, r, g, b, fog, iw, u*iw, v*iw, and for lamps per pixel
+/// world position, normal and base colour (all times iw).
+const NATTR: usize = 19;
 
 impl Band<'_> {
     fn raster_tri(&mut self, ti: u32, t: &Tri, tex: Option<&Texture>, style: &PsxStyle, rows: &RowTables, w: u32) {
@@ -908,14 +1224,22 @@ impl Band<'_> {
         }
         let inv_area = 1.0 / area as f64;
         let wu = w as usize;
-        // vertex attribute table: z, u, v, r, g, b, fog [, iw, u*iw, v*iw]
+        // vertex attribute table: z, u, v, r, g, b, fog [, iw, u*iw, v*iw [, world position, normal, base colour (times iw)]]
         let persp = !style.affine;
-        let na = if persp { 10 } else { 7 };
-        let mut q = [[0f64; 10]; 3];
+        let pt = (t.px != NO_PX).then(|| &rows.pxs[t.px as usize]);
+        let na = if pt.is_some() { NATTR } else if persp { 10 } else { 7 };
+        let mut q = [[0f64; NATTR]; 3];
         for (k, v) in [v0, v1, v2].iter().enumerate() {
             q[k][..7].copy_from_slice(&[v.z as f64, v.uv[0] as f64, v.uv[1] as f64, v.shade[0] as f64, v.shade[1] as f64, v.shade[2] as f64, v.fog as f64]);
-            q[k][7..].copy_from_slice(&[v.iw as f64, (v.uv[0] * v.iw) as f64, (v.uv[1] * v.iw) as f64]);
+            q[k][7..10].copy_from_slice(&[v.iw as f64, (v.uv[0] * v.iw) as f64, (v.uv[1] * v.iw) as f64]);
+            if let Some(p) = pt {
+                for (n, a) in p.wn[k].iter().enumerate() {
+                    q[k][10 + n] = (*a * v.iw) as f64;
+                }
+            }
         }
+        let lamp_ids: &[u8] = pt.map_or(&[], |p| &p.ids[..p.n as usize]);
+        let two_sided = pt.is_some_and(|p| p.two_sided);
         let (tw, th, tpx): (i32, i32, &[[u8; 4]]) = match tex {
             Some(t) => (t.w as i32, t.h as i32, &t.px[..]),
             None => (1, 1, &[]),
@@ -926,6 +1250,9 @@ impl Band<'_> {
         let fog_on = style.fog_on;
         let dither = style.dither;
         let zbuf = style.z_buffer;
+        let tone = rows.tone.as_deref();
+        let tone_k = (TONE_N - 1) as f32 / (255.0 * 4.0);
+        let cap = rows.cap;
 
         for py in miny..=maxy {
             let dy = (py - miny) as i64;
@@ -947,8 +1274,8 @@ impl Band<'_> {
                 continue;
             }
             // attribute value at pixel k of this row: base + step * k
-            let mut base = [0f32; 10];
-            let mut step = [0f32; 10];
+            let mut base = [0f32; NATTR];
+            let mut step = [0f32; NATTR];
             for n in 0..na {
                 let (mut b, mut s) = (0.0f64, 0.0f64);
                 for i in 0..3 {
@@ -984,12 +1311,29 @@ impl Band<'_> {
                     }
                     rgb = [texel[0] as f32, texel[1] as f32, texel[2] as f32];
                 }
+                let mut shade = [base[3] + step[3] * kk, base[4] + step[4] * kk, base[5] + step[5] * kk];
+                if pt.is_some() {
+                    // lamps per pixel: smooth pools of light even on big flat polygons
+                    let iw = (base[7] + step[7] * kk).max(1e-20);
+                    let inv = 1.0 / iw;
+                    let at = |n: usize| (base[n] + step[n] * kk) * inv;
+                    let p = Vec3::new(at(10), at(11), at(12));
+                    let nn = Vec3::new(at(13), at(14), at(15)).normalized();
+                    let add = crate::lights::sum_at(rows.lights, lamp_ids, p, nn, two_sided);
+                    let col = [at(16), at(17), at(18)];
+                    for c in 0..3 {
+                        shade[c] = (shade[c] + col[c] * add[c]).min(cap * col[c].max(1e-6)).max(0.0);
+                    }
+                }
                 let fog = if fog_on { base[6] + step[6] * kk } else { 0.0 };
                 let d = if dither { DITHER[(py & 3) as usize][(px & 3) as usize] as f32 } else { 0.0 };
                 let mut out = [0u8; 4];
                 out[3] = 255;
                 for c in 0..3 {
-                    let lit = rgb[c] * (base[3 + c] + step[3 + c] * kk);
+                    let mut lit = rgb[c] * shade[c];
+                    if let Some(tl) = tone {
+                        lit = tl[((lit * tone_k) as usize).min(TONE_N - 1)];
+                    }
                     let col = if fog_on { lit + (fog_c[c] - lit) * fog } else { lit };
                     out[c] = rows.qlut[(col + d + 0.5).clamp(0.0, 255.0) as usize];
                 }
@@ -1194,6 +1538,6 @@ mod tests {
 
     #[test]
     fn presets_exist() {
-        assert_eq!(PsxStyle::presets().len(), 4);
+        assert_eq!(PsxStyle::presets().len(), 6);
     }
 }

@@ -10,7 +10,7 @@ use crate::paintui::SelTool;
 use crate::theme::*;
 use crate::widgets::{self, ribbon_button, tool_cell};
 use crate::{compat, dialogs, mode_command, mode_icon, mode_label, AnimTool, App, ModelTool, MODES};
-use eframe::egui::{self, pos2, vec2, Align, Align2, Color32, Context, Layout, Sense, SidePanel, TopBottomPanel};
+use eframe::egui::{self, pos2, vec2, Align, Align2, Color32, Context, Layout, Rect, Sense, SidePanel, TopBottomPanel};
 use psxcore::commands::CommandId;
 use psxcore::editor::Mode;
 use psxcore::paint::Tool;
@@ -27,10 +27,36 @@ pub fn hairline(ui: &mut egui::Ui) {
 
 impl App {
     /// Main menu: every command of the catalogue, grouped the way artists look for them.
+    /// One command of a menu: its title, shortcut and description.
+    fn menu_item(&mut self, ui: &mut egui::Ui, ctx: &Context, id: CommandId) {
+        let label = self.settings.keymap.label(id);
+        let mut b = egui::Button::new(id.title());
+        if !label.is_empty() {
+            b = b.shortcut_text(label);
+        }
+        if ui.add(b).on_hover_text(id.info().description).clicked() {
+            self.run_command(ctx, id);
+            ui.close_menu();
+        }
+    }
+
     pub fn menu_bar(&mut self, ctx: &Context) {
-        TopBottomPanel::top("menu").exact_height(26.0).frame(compat::frame(BG0(), 0.0).inner_margin(egui::Margin::symmetric(8, 2)).stroke(compat::stroke(1.0, LINE_SOFT()))).show(ctx, |ui| {
+        let custom = self.custom_titlebar;
+        let height = if custom { titlebar_height() } else { 26.0 };
+        let maximized = ctx.input(|i| i.viewport().maximized.unwrap_or(false));
+        let pad_x = if custom { 6 } else { 8 };
+        TopBottomPanel::top("menu").exact_height(height).frame(compat::frame(panel_fill(TITLEBAR()), 0.0).inner_margin(egui::Margin::symmetric(pad_x, 2)).stroke(compat::stroke(1.0, LINE_SOFT()))).show(ctx, |ui| {
+            self.art.paint_panel(ui, crate::themeart::Slot::Titlebar, vec2(pad_x as f32, 2.0));
             egui::menu::bar(ui, |ui| {
-                widgets::logo(ui, 18.0);
+                ui.set_min_height(height - 4.0);
+                match self.art.size(crate::themeart::Slot::Logo) {
+                    Some([w, h]) => {
+                        let lh = (height - 8.0).max(12.0);
+                        let (r, _) = ui.allocate_exact_size(vec2((w / h.max(1.0) * lh).min(160.0), lh), Sense::hover());
+                        self.art.paint(ui.painter(), crate::themeart::Slot::Logo, r);
+                    }
+                    None => widgets::logo(ui, 18.0),
+                }
                 ui.add_space(6.0);
                 use CommandId::*;
                 let groups: [(&str, &[CommandId]); 8] = [
@@ -40,8 +66,8 @@ impl App {
                     (
                         "Mesh",
                         &[
-                            MeshExtrude, MeshInset, MeshBevel, MeshBevelVertices, MeshLoopCut, MeshKnife, MeshSubdivide, MeshFill, MeshBridge, MeshConnect, MeshMerge, MeshDissolve, MeshDelete, MeshDuplicate, MeshSplit, MeshSeparate, MeshTriangulate, MeshTrisToQuads, MeshFlipNormals,
-                            MeshRecalcNormals, MeshSmooth, MeshSymmetrize, MeshShadeSmooth, MeshShadeFlat, MeshMarkSeam, MeshClearSeam, MeshUnwrap, MeshSelectAll, MeshSelectInvert, MeshSelectLinked, MeshHide, MeshReveal, MeshXray, MeshProportional,
+                            MeshExtrude, MeshExtrudeIndividual, MeshExtrudeNormals, MeshInset, MeshBevel, MeshBevelVertices, MeshLoopCut, MeshKnife, MeshSubdivide, MeshSpin, MeshSolidify, MeshArray, MeshPoke, MeshToSphere, MeshFill, MeshBridge,
+                            MeshConnect, MeshMerge, MeshDissolve, MeshDelete, MeshDuplicate, MeshSplit, MeshSeparate, MeshSymmetrize, MeshSmooth,
                         ],
                     ),
                     ("Paint", &[ToolBrush, ToolEraser, ToolFill, ToolGradient, ToolSmudge, ToolBlur, ToolPicker, SwapColors, BrushSmaller, BrushBigger, ToggleSymmetry, ToggleProjectionPaint]),
@@ -56,25 +82,40 @@ impl App {
                             ui.label(egui::RichText::new("Works in Edit mode (Tab)").size(11.5).color(DIM()));
                         }
                         for &id in items {
-                            let label = self.settings.keymap.label(id);
-                            let mut b = egui::Button::new(id.title());
-                            if !label.is_empty() {
-                                b = b.shortcut_text(label);
-                            }
-                            if ui.add(b).on_hover_text(id.info().description).clicked() {
-                                self.run_command(ctx, id);
-                                ui.close_menu();
+                            self.menu_item(ui, ctx, id);
+                        }
+                        if name == "Mesh" {
+                            // the rarer commands live in submenus so the menu fits on small screens
+                            ui.separator();
+                            let subs: [(&str, &[CommandId]); 3] = [
+                                ("Normals and shading", &[MeshRecalcNormals, MeshFlipNormals, MeshShadeSmooth, MeshShadeFlat, MeshTriangulate, MeshTrisToQuads]),
+                                ("UV", &[MeshMarkSeam, MeshClearSeam, MeshUnwrap]),
+                                ("Select and show", &[MeshSelectAll, MeshSelectInvert, MeshSelectLinked, MeshHide, MeshReveal, MeshXray, MeshProportional]),
+                            ];
+                            for (sub, ids) in subs {
+                                ui.menu_button(sub, |ui| {
+                                    ui.set_min_width(230.0);
+                                    for &id in ids {
+                                        self.menu_item(ui, ctx, id);
+                                    }
+                                });
                             }
                         }
                     });
                 }
                 ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                    if custom {
+                        ui.spacing_mut().item_spacing.x = 0.0;
+                        self.window_buttons(ui, ctx, height, maximized);
+                        ui.add_space(8.0);
+                        ui.spacing_mut().item_spacing.x = 6.0;
+                    }
                     // Obsidian-like "quick switcher" pill that opens the command palette
                     let keys = self.settings.keymap.label(CommandPalette);
                     let (r, resp) = ui.allocate_exact_size(vec2(210.0_f32.min(ui.available_width() * 0.35), 20.0), Sense::click());
                     let p = ui.painter();
-                    p.rect_filled(r, compat::cr(RADIUS + 1.0), if resp.hovered() { BG2() } else { BG1() });
-                    compat::stroke_rect(p, r, RADIUS + 1.0, compat::stroke(1.0, if resp.hovered() { LINE() } else { LINE_SOFT() }));
+                    p.rect_filled(r, compat::cr(RADIUS() + 1.0), if resp.hovered() { BG2() } else { BG1() });
+                    compat::stroke_rect(p, r, RADIUS() + 1.0, compat::stroke(1.0, if resp.hovered() { LINE() } else { LINE_SOFT() }));
                     crate::icons::draw(p, Icon::Search, pos2(r.min.x + 12.0, r.center().y), 16.0, DIM());
                     compat::text(p, pos2(r.min.x + 24.0, r.center().y), Align2::LEFT_CENTER, "Search commands", 12.0, DIM());
                     if !keys.is_empty() {
@@ -84,18 +125,94 @@ impl App {
                         self.run_command(ctx, CommandPalette);
                     }
                     ui.add_space(8.0);
-                    if ui.available_width() > 180.0 {
-                        let dirty = if self.ed.dirty { "  \u{2022}" } else { "" };
-                        ui.label(egui::RichText::new(format!("{}{dirty}", self.ed.project.name)).size(12.0).color(DIM()));
+                    let dirty = if self.ed.dirty { "  \u{2022}" } else { "" };
+                    if custom {
+                        // the rest of the bar moves the window; the document title sits in its middle
+                        let (r, resp) = ui.allocate_exact_size(vec2(ui.available_width(), height), Sense::click_and_drag());
+                        let title = format!("{}{dirty} — Jank!", self.ed.project.name);
+                        let full = ui.ctx().screen_rect();
+                        let centre = pos2(full.center().x.clamp(r.min.x + 80.0, (r.max.x - 80.0).max(r.min.x + 80.0)), r.center().y);
+                        if r.width() > 160.0 {
+                            let p = ui.painter().with_clip_rect(r);
+                            compat::text(&p, centre, Align2::CENTER_CENTER, &title, 12.5, TITLEBAR_TEXT());
+                        }
+                        if resp.double_clicked() {
+                            ctx.send_viewport_cmd(egui::ViewportCommand::Maximized(!maximized));
+                        } else if resp.drag_started_by(egui::PointerButton::Primary) {
+                            ctx.send_viewport_cmd(egui::ViewportCommand::StartDrag);
+                        }
+                    } else if ui.available_width() > 180.0 {
+                        ui.label(egui::RichText::new(format!("{}{dirty}", self.ed.project.name)).size(12.0).color(TITLEBAR_TEXT()));
                     }
                 });
             });
         });
     }
 
+    /// Minimise, maximise / restore and close at the right end of Jank's own title bar (laid out right to left).
+    fn window_buttons(&mut self, ui: &mut egui::Ui, ctx: &Context, height: f32, maximized: bool) {
+        let size = vec2(44.0, height);
+        for (icon, tip, danger) in [(Icon::WinClose, "Close", true), (if maximized { Icon::WinRestore } else { Icon::WinMax }, if maximized { "Restore" } else { "Maximise" }, false), (Icon::WinMin, "Minimise", false)] {
+            let (r, resp) = ui.allocate_exact_size(size, Sense::click());
+            let hov = ui.ctx().animate_bool_with_time(resp.id, resp.hovered(), 0.08);
+            let p = ui.painter();
+            if hov > 0.0 {
+                let fill = if danger { Color32::from_rgb(0xd2, 0x3f, 0x3f) } else { BG3() };
+                p.rect_filled(r, compat::cr(0.0), alpha(fill, (hov * 255.0) as u8));
+            }
+            let ink = if danger && hov > 0.5 { Color32::WHITE } else { TITLEBAR_TEXT() };
+            crate::icons::draw(p, icon, r.center(), 16.0, mix(ink, TEXT(), hov * 0.5));
+            if widgets::with_tip(resp, tip).clicked() {
+                match icon {
+                    Icon::WinClose => ctx.send_viewport_cmd(egui::ViewportCommand::Close),
+                    Icon::WinMin => ctx.send_viewport_cmd(egui::ViewportCommand::Minimized(true)),
+                    _ => ctx.send_viewport_cmd(egui::ViewportCommand::Maximized(!maximized)),
+                }
+            }
+        }
+    }
+
+    /// Without system decorations the window edges and corners resize the window, and a thin border marks the edge.
+    pub fn resize_edges(&mut self, ctx: &Context) {
+        if !self.custom_titlebar {
+            return;
+        }
+        let (maximized, fullscreen) = ctx.input(|i| (i.viewport().maximized.unwrap_or(false), i.viewport().fullscreen.unwrap_or(false)));
+        if maximized || fullscreen {
+            return;
+        }
+        use egui::viewport::ResizeDirection as D;
+        use egui::CursorIcon as C;
+        let r = ctx.screen_rect();
+        ctx.layer_painter(egui::LayerId::new(egui::Order::Foreground, egui::Id::new("window_border"))).rect_stroke(r, 0.0, compat::stroke(1.0, WINDOW_BORDER()), egui::StrokeKind::Inside);
+        let (e, c) = (5.0, 12.0);
+        let zones = [
+            (Rect::from_min_max(pos2(r.min.x + c, r.min.y), pos2(r.max.x - c, r.min.y + e)), D::North, C::ResizeVertical),
+            (Rect::from_min_max(pos2(r.min.x + c, r.max.y - e), pos2(r.max.x - c, r.max.y)), D::South, C::ResizeVertical),
+            (Rect::from_min_max(pos2(r.min.x, r.min.y + c), pos2(r.min.x + e, r.max.y - c)), D::West, C::ResizeHorizontal),
+            (Rect::from_min_max(pos2(r.max.x - e, r.min.y + c), pos2(r.max.x, r.max.y - c)), D::East, C::ResizeHorizontal),
+            (Rect::from_min_size(r.min, vec2(c, c)), D::NorthWest, C::ResizeNwSe),
+            (Rect::from_min_size(pos2(r.max.x - c, r.max.y - c), vec2(c, c)), D::SouthEast, C::ResizeNwSe),
+            (Rect::from_min_size(pos2(r.max.x - c, r.min.y), vec2(c, c)), D::NorthEast, C::ResizeNeSw),
+            (Rect::from_min_size(pos2(r.min.x, r.max.y - c), vec2(c, c)), D::SouthWest, C::ResizeNeSw),
+        ];
+        for (i, (zone, dir, cursor)) in zones.into_iter().enumerate() {
+            egui::Area::new(egui::Id::new(("resize_edge", i))).order(egui::Order::Foreground).fixed_pos(zone.min).interactable(true).show(ctx, |ui| {
+                let resp = ui.allocate_response(zone.size(), Sense::drag());
+                if resp.hovered() || resp.dragged() {
+                    ctx.set_cursor_icon(cursor);
+                }
+                if resp.drag_started_by(egui::PointerButton::Primary) {
+                    ctx.send_viewport_cmd(egui::ViewportCommand::BeginResize(dir));
+                }
+            });
+        }
+    }
+
     /// The Obsidian-style ribbon: modes on top, file and history actions below, palette and settings at the bottom.
     pub fn ribbon(&mut self, ctx: &Context) {
-        SidePanel::left("ribbon").exact_width(RIBBON_W).resizable(false).frame(compat::frame(BG0(), 0.0).inner_margin(egui::Margin::symmetric(4, 6)).stroke(compat::stroke(1.0, LINE_SOFT()))).show(ctx, |ui| {
+        SidePanel::left("ribbon").exact_width(RIBBON_W).resizable(false).frame(compat::frame(panel_fill(RIBBON()), 0.0).inner_margin(egui::Margin::symmetric(4, 6)).stroke(compat::stroke(1.0, LINE_SOFT()))).show(ctx, |ui| {
+            self.art.paint_panel(ui, crate::themeart::Slot::Ribbon, vec2(4.0, 6.0));
             ui.spacing_mut().item_spacing = vec2(0.0, 2.0);
             for m in MODES {
                 let tip = self.tip_for(mode_command(m), mode_label(m));
@@ -154,7 +271,7 @@ impl App {
         if !self.settings.show_toolbar {
             return;
         }
-        SidePanel::left("tools").exact_width(STRIP_W).resizable(false).frame(compat::frame(BG1(), 0.0).inner_margin(egui::Margin::symmetric(4, 6)).stroke(compat::stroke(1.0, SHADE()))).show(ctx, |ui| {
+        SidePanel::left("tools").exact_width(STRIP_W).resizable(false).frame(compat::frame(panel_fill(TOOLSTRIP()), 0.0).inner_margin(egui::Margin::symmetric(4, 6)).stroke(compat::stroke(1.0, SHADE()))).show(ctx, |ui| {
             ui.spacing_mut().item_spacing = vec2(0.0, 2.0);
             match self.ed.mode {
                 Mode::Model if self.ed.edit_active() => self.edit_cells(ui, ctx),
@@ -311,9 +428,10 @@ impl App {
         if !self.settings.show_status_bar {
             return;
         }
-        TopBottomPanel::bottom("status").exact_height(22.0).frame(compat::frame(BG0(), 0.0).inner_margin(egui::Margin::symmetric(10, 2)).stroke(compat::stroke(1.0, LINE_SOFT()))).show(ctx, |ui| {
+        TopBottomPanel::bottom("status").exact_height(22.0).frame(compat::frame(panel_fill(STATUSBAR()), 0.0).inner_margin(egui::Margin::symmetric(10, 2)).stroke(compat::stroke(1.0, LINE_SOFT()))).show(ctx, |ui| {
+            self.art.paint_panel(ui, crate::themeart::Slot::Statusbar, vec2(10.0, 2.0));
             ui.horizontal_centered(|ui| {
-                let dim = |t: String| egui::RichText::new(t).size(11.5).color(DIM());
+                let dim = |t: String| egui::RichText::new(t).size(11.5).color(STATUSBAR_TEXT());
                 crate::icons::draw(ui.painter(), mode_icon(self.ed.mode), pos2(ui.cursor().min.x + 7.0, ui.max_rect().center().y), 16.0, accent());
                 ui.add_space(18.0);
                 let msg = if self.ed.status.is_empty() { "Ready".to_string() } else { self.ed.status.clone() };

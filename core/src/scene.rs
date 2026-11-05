@@ -2,6 +2,7 @@
 use crate::math::*;
 use crate::layers::Layer;
 use crate::lighting::Lighting;
+use crate::lights::{Light, LightPreset};
 use crate::raster::{Camera, PsxStyle};
 
 #[derive(Clone, Debug, PartialEq)]
@@ -51,6 +52,8 @@ pub struct Scene {
     pub lighting: Lighting,
     /// Reference pictures placed in 3D space to model by (never part of the final render).
     pub refs: Vec<RefImage>,
+    /// Lamps: point and spot lights (see `lights.rs`).
+    pub lights: Vec<Light>,
     next_id: u32,
 }
 
@@ -85,13 +88,13 @@ impl RefImage {
 }
 impl Default for Scene {
     fn default() -> Self {
-        Self { objects: vec![], camera: Camera::default(), style: PsxStyle::ps1_classic(), layers: vec![], layers_back: 0, lighting: Lighting::default(), refs: vec![], next_id: 1 }
+        Self { objects: vec![], camera: Camera::default(), style: PsxStyle::ps1_classic(), layers: vec![], layers_back: 0, lighting: Lighting::default(), refs: vec![], lights: vec![], next_id: 1 }
     }
 }
 impl Scene {
     /// A copy without the layer pictures (used by undo snapshots, which store layers separately).
     pub fn clone_without_layers(&self) -> Scene {
-        Scene { objects: self.objects.clone(), camera: self.camera, style: self.style.clone(), layers: Vec::new(), layers_back: 0, lighting: self.lighting.clone(), refs: self.refs.clone(), next_id: self.next_id }
+        Scene { objects: self.objects.clone(), camera: self.camera, style: self.style.clone(), layers: Vec::new(), layers_back: 0, lighting: self.lighting.clone(), refs: self.refs.clone(), lights: self.lights.clone(), next_id: self.next_id }
     }
     /// True if layer `i` is drawn behind the 3D objects.
     pub fn layer_is_back(&self, i: usize) -> bool {
@@ -155,9 +158,14 @@ impl Scene {
         id
     }
     pub fn remove_object(&mut self, id: u32) -> bool {
-        let n = self.objects.len();
+        let Some(m) = self.object(id).map(|o| o.transform.matrix()) else { return false };
         self.objects.retain(|o| o.id != id);
-        self.objects.len() != n
+        // lamps attached to the object stay where they were
+        for l in self.lights.iter_mut().filter(|l| l.attach == Some(id)) {
+            l.pos = m.transform_point(l.pos);
+            l.attach = None;
+        }
+        true
     }
     pub fn object(&self, id: u32) -> Option<&SceneObject> {
         self.objects.iter().find(|o| o.id == id)
@@ -167,6 +175,28 @@ impl Scene {
     }
     pub fn next_id(&self) -> u32 {
         self.next_id
+    }
+    /// Adds a lamp from a preset and returns its id.
+    pub fn add_light(&mut self, preset: LightPreset) -> u32 {
+        let id = self.lights.iter().map(|l| l.id).max().unwrap_or(0) + 1;
+        let mut l = Light::new(id, preset);
+        let same = self.lights.iter().filter(|o| o.name.starts_with(preset.label())).count();
+        if same > 0 {
+            l.name = format!("{} {}", preset.label(), same + 1);
+        }
+        self.lights.push(l);
+        id
+    }
+    pub fn light(&self, id: u32) -> Option<&Light> {
+        self.lights.iter().find(|l| l.id == id)
+    }
+    pub fn light_mut(&mut self, id: u32) -> Option<&mut Light> {
+        self.lights.iter_mut().find(|l| l.id == id)
+    }
+    pub fn remove_light(&mut self, id: u32) -> bool {
+        let n = self.lights.len();
+        self.lights.retain(|l| l.id != id);
+        n != self.lights.len()
     }
     /// Restores the id counter when loading from a file. The counter never drops to or below the
     /// largest id already used by an object, so ids stay unique.

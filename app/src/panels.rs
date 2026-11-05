@@ -18,7 +18,7 @@ fn from_c32(c: Color32) -> [f32; 3] {
     [c.r() as f32 / 255.0, c.g() as f32 / 255.0, c.b() as f32 / 255.0]
 }
 /// Colour editor for an [r, g, b] triple in 0..1 with a caption. Returns true if the colour changed.
-fn rgb_edit(ui: &mut Ui, label: &str, c: &mut [f32; 3]) -> bool {
+pub(crate) fn rgb_edit(ui: &mut Ui, label: &str, c: &mut [f32; 3]) -> bool {
     ui.horizontal(|ui| {
         let mut col = to_c32(*c);
         let changed = ui.color_edit_button_srgba(&mut col).changed();
@@ -47,6 +47,19 @@ pub enum RightTab {
 /// Render resolution and the retro look of the final picture.
 pub fn look_editor(ui: &mut Ui, s: &mut PsxStyle) -> bool {
     let mut ch = false;
+    section(ui, "Style presets", accent(), |ui| {
+        dim(ui, "A starting point for the whole look. The render resolution stays as it is.");
+        ui.horizontal_wrapped(|ui| {
+            for p in PsxStyle::presets() {
+                let tip = preset_tip(&p.name);
+                if Btn::new(&p.name).accent(accent()).on(s.name == p.name).tip(tip).show(ui).clicked() {
+                    let (w, h) = (s.width, s.height);
+                    *s = PsxStyle { width: w, height: h, ..p };
+                    ch = true;
+                }
+            }
+        });
+    });
     section(ui, "Render resolution", accent(), |ui| {
         ui.horizontal_wrapped(|ui| {
             for (w, h) in [(160u32, 120u32), (256, 224), (320, 240), (384, 216), (512, 384), (640, 480), (1280, 720)] {
@@ -77,8 +90,64 @@ pub fn look_editor(ui: &mut Ui, s: &mut PsxStyle) -> bool {
         ch |= slider_f(ui, "scanlines", &mut s.scanlines, 0.0..=1.0);
         ch |= slider_f(ui, "film grain", &mut s.grain, 0.0..=1.0);
     });
+    ch |= modern_effects(ui, s);
     s.width = s.width.clamp(16, 4096);
     s.height = s.height.clamp(16, 4096);
+    ch
+}
+
+fn preset_tip(name: &str) -> &'static str {
+    match name {
+        "PS1 Classic" => "Wobbly affine textures, vertex snapping, dithering and 15-bit colour",
+        "Lo-Fi Calm" => "Warm haze, a soft evening sky and film grain",
+        "Clean Low-Poly" => "Sharp and clean: no wobble, no dithering, full colour",
+        "Horror Fog" => "Dense dark fog, cold colours and heavy grain",
+        "Night Glow" => "Night scene for lamps: pixel lamps, soft tone curve, bloom and contact shadows",
+        "CRT Arcade" => "An old arcade screen: curved glass, RGB mask, colour fringes",
+        _ => "Apply this style",
+    }
+}
+
+/// Modern touches on top of the retro picture: lamps per pixel, a tone curve, glow, occlusion and a CRT screen.
+fn modern_effects(ui: &mut Ui, s: &mut PsxStyle) -> bool {
+    use psxcore::raster::Tonemap;
+    let mut ch = false;
+    section(ui, "Modern effects", accent(), |ui| {
+        ch |= toggle_tip(ui, &mut s.pixel_lights, "Pixel lamps", accent(), "Lamps are worked out for every pixel: round, smooth pools of light even on big faces. Off: per vertex, the PS1 way").clicked();
+        ui.horizontal(|ui| {
+            dim(ui, "tone curve");
+            for t in [Tonemap::Off, Tonemap::Soft, Tonemap::Filmic] {
+                let tip = match t {
+                    Tonemap::Off => "Bright light is clipped to white",
+                    Tonemap::Soft => "Very bright light rolls off softly; dark and mid tones stay as they are",
+                    _ => "A film-like curve: rich contrast, highlights never burn out",
+                };
+                if Btn::new(t.label()).accent(accent()).on(s.tonemap == t).tip(tip).show(ui).clicked() {
+                    s.tonemap = t;
+                    ch = true;
+                }
+            }
+        });
+        if s.tonemap != Tonemap::Off {
+            ch |= slider_f_tip(ui, "exposure", &mut s.exposure, 0.2..=4.0, "Overall brightness before the tone curve");
+        }
+        ch |= slider_f_tip(ui, "bloom", &mut s.bloom, 0.0..=1.5, "Glow around bright parts of the picture");
+        if s.bloom > 0.0 {
+            ch |= slider_f_tip(ui, "bloom threshold", &mut s.bloom_threshold, 0.0..=0.98, "How bright a pixel must be to glow");
+            ch |= slider_f_tip(ui, "bloom size", &mut s.bloom_radius, 0.0..=1.0, "How far the glow spreads");
+        }
+        ch |= slider_f_tip(ui, "contact shadows", &mut s.ao, 0.0..=1.0, "Ambient occlusion: soft darkening in corners, creases and where objects touch");
+        if s.ao > 0.0 {
+            ch |= slider_f_tip(ui, "shadow reach", &mut s.ao_radius, 0.05..=3.0, "Size of the contact shadows in metres");
+        }
+        ch |= slider_f_tip(ui, "lamp halos", &mut s.halo, 0.0..=2.0, "Soft glow drawn around visible lamps (each lamp has its own halo amount)");
+        ch |= slider_f_tip(ui, "CRT curve", &mut s.crt_curve, 0.0..=1.0, "Bulging glass of an old screen");
+        ch |= slider_f_tip(ui, "CRT mask", &mut s.crt_mask, 0.0..=1.0, "The RGB stripes of a shadow mask");
+        ch |= slider_f_tip(ui, "colour fringes", &mut s.chroma, 0.0..=1.0, "Red and blue pulled apart towards the edges");
+        if s.modern() {
+            dim(ui, "The viewport can draw these cheaper: Settings → Viewport → Viewport effects.");
+        }
+    });
     ch
 }
 
@@ -272,11 +341,12 @@ fn pane_header(ui: &mut Ui, icon: Icon, title: &str, hint: &str) {
 
 impl App {
     pub fn left_panel(&mut self, ctx: &Context) {
-        let mut panel = SidePanel::left("left").resizable(true).default_width(self.settings.layout.left_width).width_range(210.0..=380.0).frame(compat::frame(BG1(), 10.0));
+        let mut panel = SidePanel::left("left").resizable(true).default_width(self.settings.layout.left_width).width_range(210.0..=380.0).frame(compat::frame(panel_fill(PANEL()), 10.0));
         if self.layout_reset {
             panel = panel.exact_width(self.settings.layout.left_width);
         }
         let shown = panel.show(ctx, |ui| {
+            self.art.paint_panel(ui, crate::themeart::Slot::Panel, vec2(10.0, 10.0));
             pane_header(ui, crate::mode_icon(self.ed.mode), crate::mode_label(self.ed.mode), mode_hint(self.ed.mode));
             ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| match self.ed.mode {
                 Mode::Model if self.ed.edit_active() => self.edit_tools(ui, ctx),
@@ -593,11 +663,12 @@ impl App {
     }
 
     pub fn right_panel(&mut self, ctx: &Context) {
-        let mut panel = SidePanel::right("right").resizable(true).default_width(self.settings.layout.right_width).width_range(240.0..=440.0).frame(compat::frame(BG1(), 10.0));
+        let mut panel = SidePanel::right("right").resizable(true).default_width(self.settings.layout.right_width).width_range(240.0..=440.0).frame(compat::frame(panel_fill(PANEL()), 10.0));
         if self.layout_reset {
             panel = panel.exact_width(self.settings.layout.right_width);
         }
         let shown = panel.show(ctx, |ui| {
+            self.art.paint_panel(ui, crate::themeart::Slot::Panel, vec2(10.0, 10.0));
             ui.horizontal(|ui| {
                 ui.spacing_mut().item_spacing.x = 2.0;
                 let w = ((ui.available_width() - 6.0) / 4.0).floor();
@@ -697,6 +768,11 @@ impl App {
                 });
             }
         });
+        self.placement_section(ui);
+        self.lights_section(ui);
+    }
+
+    fn placement_section(&mut self, ui: &mut Ui) {
         let Some(id) = self.ed.selected_object else { return };
         let Some(t) = self.ed.object_transform(id) else { return };
         section(ui, if matches!(self.ed.mode, Mode::Pose | Mode::Animate) { "Placement (this frame)" } else { "Placement" }, accent(), |ui| {

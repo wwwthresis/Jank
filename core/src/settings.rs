@@ -204,6 +204,27 @@ choice!(
 );
 
 choice!(
+    /// Costly picture effects (pixel lamps, ambient occlusion, bloom, CRT) in the editing viewport. Renders always use the style.
+    ViewportEffects {
+        /// Exactly like the final render.
+        Full = "full", "Like render";
+        /// Lamps per vertex, no ambient occlusion or bloom; the tone curve, halos and screen effects stay.
+        Light = "light", "Light";
+        /// The plain retro picture: no modern effects at all.
+        Off = "off", "Off";
+    }
+);
+impl ViewportEffects {
+    pub fn cap(self) -> crate::raster::EffectsCap {
+        match self {
+            ViewportEffects::Full => crate::raster::EffectsCap::Full,
+            ViewportEffects::Light => crate::raster::EffectsCap::Light,
+            ViewportEffects::Off => crate::raster::EffectsCap::Off,
+        }
+    }
+}
+
+choice!(
     /// Composition guides drawn over the viewport in Render mode.
     Guides {
         Off = "off", "Off";
@@ -249,6 +270,10 @@ pub struct Settings {
     pub status_fps: bool,
     /// Shadows in the editing viewport only.
     pub viewport_shadows: ViewportShadows,
+    /// Modern effects in the editing viewport only.
+    pub viewport_effects: ViewportEffects,
+    /// Use the operating system's window title bar instead of Jank's own one (takes effect after a restart).
+    pub system_title_bar: bool,
     /// Redraw the 3D view only when something in it may have changed (saves power and keeps the interface fast).
     pub lazy_redraw: bool,
     /// Multipliers for orbiting and wheel zoom, `SPEED_MIN..=SPEED_MAX`.
@@ -313,6 +338,8 @@ impl Default for Settings {
             show_status_bar: true,
             status_fps: false,
             viewport_shadows: ViewportShadows::Render,
+            viewport_effects: ViewportEffects::Full,
+            system_title_bar: false,
             lazy_redraw: true,
             orbit_speed: 1.0,
             zoom_speed: 1.0,
@@ -414,6 +441,8 @@ impl Settings {
         s.push_str(&format!("show_status_bar = {}\n", self.show_status_bar));
         s.push_str(&format!("status_fps = {}\n", self.status_fps));
         s.push_str(&format!("viewport_shadows = {}\n", self.viewport_shadows.id()));
+        s.push_str(&format!("viewport_effects = {}\n", self.viewport_effects.id()));
+        s.push_str(&format!("system_title_bar = {}\n", self.system_title_bar));
         s.push_str(&format!("lazy_redraw = {}\n", self.lazy_redraw));
         s.push_str(&format!("orbit_speed = {:.2}\n", self.orbit_speed));
         s.push_str(&format!("zoom_speed = {:.2}\n", self.zoom_speed));
@@ -499,6 +528,8 @@ impl Settings {
                 "show_status_bar" => parse_bool(v).map(|b| st.show_status_bar = b).unwrap_or_else(bad),
                 "status_fps" => parse_bool(v).map(|b| st.status_fps = b).unwrap_or_else(bad),
                 "viewport_shadows" => ViewportShadows::parse(v).map(|c| st.viewport_shadows = c).ok_or(()).unwrap_or_else(|_| bad()),
+                "viewport_effects" => ViewportEffects::parse(v).map(|c| st.viewport_effects = c).ok_or(()).unwrap_or_else(|_| bad()),
+                "system_title_bar" => parse_bool(v).map(|b| st.system_title_bar = b).unwrap_or_else(bad),
                 "lazy_redraw" => parse_bool(v).map(|b| st.lazy_redraw = b).unwrap_or_else(bad),
                 "orbit_speed" => v.parse().map(|x| st.orbit_speed = x).unwrap_or_else(|_| bad()),
                 "zoom_speed" => v.parse().map(|x| st.zoom_speed = x).unwrap_or_else(|_| bad()),
@@ -585,6 +616,8 @@ mod tests {
         s.show_toolbar = false;
         s.status_fps = true;
         s.viewport_shadows = ViewportShadows::Blob;
+        s.viewport_effects = ViewportEffects::Light;
+        s.system_title_bar = true;
         s.lazy_redraw = false;
         s.orbit_speed = 1.5;
         s.zoom_speed = 0.75;
@@ -625,6 +658,7 @@ mod tests {
         check::<Density>();
         check::<TextSize>();
         check::<ViewportShadows>();
+        check::<ViewportEffects>();
         check::<Guides>();
         let (s, p) = Settings::from_text("accent = plaid\n");
         assert_eq!(s.accent, Accent::Violet);

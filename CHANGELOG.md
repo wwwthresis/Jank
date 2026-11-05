@@ -3,6 +3,21 @@
 All notable changes to Jank! are listed here, newest first.
 Versions follow [docs/VERSIONING.md](docs/VERSIONING.md): `MAJOR.MINOR.PATCH[-channel]+BUILD`.
 
+## 0.2.0-alpha (build 31036)
+
+### Added
+- **Lamps**: point lamps and spotlights in the scene (Scene tab on the right → *Lamps* → *Add lamp…*) with presets Bulb, Candle, Lantern, Campfire, Torch, Neon, Moonbeam, Spotlight and Firefly. Each lamp has colour, brightness, reach, falloff, cone and soft edge (spots), flicker and a halo; it can hang on an object and follow it in every frame. Markers and handles in the viewport; saved in a new `LGHT` chunk.
+- **Modern effects** on top of the retro picture (Look tab): pixel lamps (light worked out per pixel instead of per vertex), a tone curve (Soft, Filmic) with exposure, bloom, contact shadows (ambient occlusion), lamp halos, and a CRT screen (curved glass, RGB mask, colour fringes). New **style presets** in one click: PS1 Classic, Lo-Fi Calm, Clean Low-Poly, Horror Fog, Night Glow and CRT Arcade. Stored in a new `LOOK` chunk; older files open unchanged.
+- **Settings → Viewport → Viewport effects** (*Like render*, *Light*, *Off*): draws the modern effects cheaper in the editing view on slow computers; renders always use the full style.
+- **Themes for every part of the window**: besides the 16 base colours a theme can colour 20 single parts (title bar, menus, buttons, tooltips, timeline, playhead…), set 11 sizes (corner radii, borders, shadows, spacing, panel opacity, title bar height, flat buttons) and show pictures in 9 places (background behind see-through panels, title bar, panels, welcome screen, timeline, own logo…) with cover, tile, stretch, center or fit. A theme file that changes on disk is picked up while Jank runs. *Save a copy to edit* writes a file with every key explained. New built-in theme **Neon Night**; *Install example themes* adds **Shrine Night** (a picture of the new demo behind the window) and **Blueprint** (a tiled grid). All keys: [docs/THEMES.md](docs/THEMES.md).
+- **Jank's own title bar**, merged with the menu bar: drag to move, double-click to maximise, minimise/maximise/close buttons, resize from every edge. *Settings → Interface → Window → Use the system title bar* brings the system one back (after a restart).
+- **Mesh tools in Edit mode**: *Spin* (lathe a profile of edges or faces around an axis, with steps and angle; a full turn closes the shape), *Solidify* (give faces an even thickness), *Array* (copies along an axis with a gap, optionally welded), *Poke* (a fan around the centre of each face, with depth), *To sphere* (`Alt+Shift+S`), *Extrude each face* (`Alt+E`) and *Extrude along normals*. They are in the new *Shape* section of the left panel and in the *Mesh* menu, which now groups its tools into submenus (*Normals and shading*, *UV*, *Select and show*).
+- **New demo project `demo/night-shrine.jank`**: a Japanese shrine at night with stone and paper lanterns, candles, a glowing vending machine, pines, a moonbeam and fireflies, about 25 lamps in the *Night Glow* style. Built by `core/examples/make_shrine_demo.rs` with the new mesh tools; checked by `core/tests/shrine_demo.rs`.
+- `core/examples/bench_effects.rs`: times the renderer with and without the modern effects.
+
+### Fixed
+- Projects without an animation opened with the view far away; they now open through the scene camera.
+
 ## 0.2.0-alpha (build 31035)
 
 ### Added

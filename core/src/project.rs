@@ -7,7 +7,8 @@
 //! last chunk: tag "END\0", empty
 //! ```
 //! Chunks: `META` (project name), `ASST` (models, textures, skeletons, emotions), `SCEN` (scene, camera, style), `LAYR` (scene layers and texture layers; optional), `LITE` (time of day and shadows; optional),
-//! `ANIM` (frame-by-frame animations). Unknown chunks are skipped, so older builds can still read newer files that only add chunks.
+//! `ANIM` (frame-by-frame animations), `EDIT`, `REFS`, `EASE`, `IDXP`, `LGHT` (lamps; optional), `LOOK` (the modern touches of the render styles: tone curve,
+//! bloom, ambient occlusion, halos, CRT; optional). Unknown chunks are skipped, so older builds can still read newer files that only add chunks.
 //! Only Jank! understands this format; the `export` layer exists for exchanging data with other programs.
 use crate::anim::*;
 use crate::encode::png::{crc32, deflate, inflate};
@@ -445,7 +446,169 @@ fn r_style(r: &mut R) -> Res<PsxStyle> {
         vignette: r.f32()?,
         scanlines: r.f32()?,
         grain: r.f32()?,
+        // the modern touches live in the `LOOK` block
+        ..PsxStyle::ps1_classic()
     })
+}
+
+// ------------------------------------------------------------------ LOOK: the modern touches of the render styles
+//
+// u8 version | style ext of the scene | u32 animations { u32 frames { u8 has_style [ style ext ] } }
+// style ext = u8 count { u8 key | f32 value }: unknown keys are skipped, missing keys keep their defaults.
+fn look_pairs(s: &PsxStyle) -> Vec<(u8, f32)> {
+    vec![
+        (1, s.pixel_lights as u8 as f32),
+        (2, s.tonemap.id() as f32),
+        (3, s.exposure),
+        (4, s.bloom),
+        (5, s.bloom_threshold),
+        (6, s.bloom_radius),
+        (7, s.ao),
+        (8, s.ao_radius),
+        (9, s.halo),
+        (10, s.crt_curve),
+        (11, s.crt_mask),
+        (12, s.chroma),
+    ]
+}
+fn w_look_ext(w: &mut W, s: &PsxStyle) {
+    let p = look_pairs(s);
+    w.u8(p.len() as u8);
+    for (k, v) in p {
+        w.u8(k);
+        w.f32(v);
+    }
+}
+fn r_look_ext(r: &mut R, s: &mut PsxStyle) -> Res<()> {
+    let n = r.u8()?;
+    for _ in 0..n {
+        let (k, v) = (r.u8()?, r.f32()?);
+        if !v.is_finite() {
+            continue;
+        }
+        let u = |v: f32| v.clamp(0.0, 1.0);
+        match k {
+            1 => s.pixel_lights = v != 0.0,
+            2 => s.tonemap = crate::raster::Tonemap::from_id(v as u8),
+            3 => s.exposure = v.clamp(0.1, 8.0),
+            4 => s.bloom = v.clamp(0.0, 2.0),
+            5 => s.bloom_threshold = u(v),
+            6 => s.bloom_radius = u(v),
+            7 => s.ao = u(v),
+            8 => s.ao_radius = v.clamp(0.02, 20.0),
+            9 => s.halo = v.clamp(0.0, 3.0),
+            10 => s.crt_curve = u(v),
+            11 => s.crt_mask = u(v),
+            12 => s.chroma = u(v),
+            _ => {}
+        }
+    }
+    Ok(())
+}
+/// Not written at all while every style is classic (no modern touch), so such files stay readable byte for byte by older builds.
+fn w_look(p: &Project) -> Option<Vec<u8>> {
+    let any = p.scene.style.modern() || p.animations.iter().any(|a| a.frames.iter().any(|f| f.style.as_ref().is_some_and(|s| s.modern())));
+    if !any {
+        return None;
+    }
+    let mut w = W::default();
+    w.u8(1);
+    w_look_ext(&mut w, &p.scene.style);
+    w.u32(p.animations.len() as u32);
+    for a in &p.animations {
+        w.u32(a.frames.len() as u32);
+        for f in &a.frames {
+            w.bool(f.style.is_some());
+            if let Some(s) = &f.style {
+                w_look_ext(&mut w, s);
+            }
+        }
+    }
+    Some(w.b)
+}
+fn r_look(d: &[u8], p: &mut Project) -> Res<()> {
+    let mut r = R::new(d);
+    let _version = r.u8()?;
+    r_look_ext(&mut r, &mut p.scene.style)?;
+    let na = r.count(4)?;
+    for ai in 0..na {
+        let nf = r.count(1)?;
+        for fi in 0..nf {
+            if !r.bool()? {
+                continue;
+            }
+            // only the modern fields are read, straight into the frame's own style
+            let mut tmp = PsxStyle::ps1_classic();
+            let target = match p.animations.get_mut(ai).and_then(|a| a.frames.get_mut(fi)).and_then(|f| f.style.as_mut()) {
+                Some(s) => s,
+                None => &mut tmp,
+            };
+            r_look_ext(&mut r, target)?;
+        }
+    }
+    Ok(())
+}
+
+// ------------------------------------------------------------------ LGHT: lamps
+//
+// u8 version | u32 count { u32 size | lamp } - every lamp is sized, so later versions can append fields.
+fn w_lights(sc: &Scene) -> Option<Vec<u8>> {
+    if sc.lights.is_empty() {
+        return None;
+    }
+    let mut w = W::default();
+    w.u8(1);
+    w.u32(sc.lights.len() as u32);
+    for l in &sc.lights {
+        let mut e = W::default();
+        e.u32(l.id);
+        e.str(&l.name);
+        e.u8(l.kind.id());
+        e.v3(l.pos);
+        e.v3(l.rot_deg);
+        e.f3(l.color);
+        for v in [l.intensity, l.range, l.falloff, l.cone_deg, l.blend, l.flicker, l.flicker_speed, l.halo] {
+            e.f32(v);
+        }
+        e.u32(l.attach.unwrap_or(0));
+        e.bool(l.enabled);
+        w.u32(e.b.len() as u32);
+        w.b.extend(e.b);
+    }
+    Some(w.b)
+}
+fn r_lights(d: &[u8], sc: &mut Scene) -> Res<()> {
+    use crate::lights::{Light, LightKind, LightPreset};
+    let mut r = R::new(d);
+    let _version = r.u8()?;
+    let n = r.count(8)?;
+    for _ in 0..n {
+        let size = r.u32()? as usize;
+        let mut e = R::new(r.take(size)?);
+        let mut l = Light::new(e.u32()?, LightPreset::Bulb);
+        l.name = e.str()?;
+        l.kind = LightKind::from_id(e.u8()?);
+        l.pos = e.v3()?;
+        l.rot_deg = e.v3()?;
+        l.color = e.f3()?;
+        l.intensity = e.f32()?;
+        l.range = e.f32()?;
+        l.falloff = e.f32()?;
+        l.cone_deg = e.f32()?;
+        l.blend = e.f32()?;
+        l.flicker = e.f32()?;
+        l.flicker_speed = e.f32()?;
+        l.halo = e.f32()?;
+        let a = e.u32()?;
+        l.attach = (a != 0 && sc.object(a).is_some()).then_some(a);
+        l.enabled = e.bool()?;
+        l.clamp();
+        if l.id == 0 || sc.light(l.id).is_some() {
+            l.id = sc.lights.iter().map(|x| x.id).max().unwrap_or(0) + 1;
+        }
+        sc.lights.push(l);
+    }
+    Ok(())
 }
 fn w_opt_tex(w: &mut W, t: &Option<Texture>) {
     w.bool(t.is_some());
@@ -993,6 +1156,12 @@ impl Project {
         if let Some(d) = w_indexed(self) {
             put_chunk(&mut out, b"IDXP", &d);
         }
+        if let Some(d) = w_lights(&self.scene) {
+            put_chunk(&mut out, b"LGHT", &d);
+        }
+        if let Some(d) = w_look(self) {
+            put_chunk(&mut out, b"LOOK", &d);
+        }
         put_chunk(&mut out, b"END\0", &[]);
         out
     }
@@ -1042,7 +1211,7 @@ impl Project {
                 b"ANIM" => anims = Some(r_anims(&data)?),
                 b"LAYR" => layer_data = Some(data),
                 b"LITE" => lite = Some(r_lighting(&data)?),
-                b"EDIT" | b"REFS" | b"EASE" | b"IDXP" => extra.push((tag, data)),
+                b"EDIT" | b"REFS" | b"EASE" | b"IDXP" | b"LGHT" | b"LOOK" => extra.push((tag, data)),
                 _ => {} // a chunk from a newer version that this build does not know: skip it
             }
         }
@@ -1063,6 +1232,8 @@ impl Project {
                 b"EDIT" => r_edit(&d, &mut p)?,
                 b"REFS" => p.scene.refs = r_refs(&d)?,
                 b"EASE" => r_ease(&d, &mut p)?,
+                b"LGHT" => r_lights(&d, &mut p.scene)?,
+                b"LOOK" => r_look(&d, &mut p)?,
                 _ => r_indexed(&d, &mut p)?,
             }
         }
@@ -1158,6 +1329,32 @@ mod tests {
         let q = Project::from_bytes(&bytes).expect("read back");
         assert_eq!(p, q);
         assert_eq!(bytes, q.to_bytes(), "saving again gives the same file (deterministic output)");
+    }
+    #[test]
+    fn lamps_and_modern_looks_roundtrip_and_old_files_stay_the_same() {
+        use crate::lights::LightPreset;
+        let plain = sample();
+        let pb = plain.to_bytes();
+        assert!(!pb.windows(4).any(|w| w == b"LGHT" || w == b"LOOK"), "a project without lamps or modern looks is written as before");
+        let mut p = sample();
+        let lamp = p.scene.add_light(LightPreset::Lantern);
+        let spot = p.scene.add_light(LightPreset::Spotlight);
+        let first = p.scene.objects[0].id;
+        {
+            let l = p.scene.light_mut(lamp).unwrap();
+            l.attach = Some(first);
+            l.flicker = 0.4;
+            l.name = "Лампа ✦".into();
+        }
+        p.scene.light_mut(spot).unwrap().enabled = false;
+        p.scene.style = PsxStyle::night_glow();
+        p.animations[0].frames[1].style = Some(PsxStyle { bloom: 0.9, crt_curve: 0.3, tonemap: crate::raster::Tonemap::Soft, ..PsxStyle::ps1_classic() });
+        let bytes = p.to_bytes();
+        let q = Project::from_bytes(&bytes).expect("read back");
+        assert_eq!(p.scene.lights, q.scene.lights);
+        assert_eq!(p.scene.style, q.scene.style);
+        assert_eq!(p, q);
+        assert_eq!(bytes, q.to_bytes(), "deterministic");
     }
     #[test]
     fn layers_roundtrip_and_old_files_have_no_layer_block() {

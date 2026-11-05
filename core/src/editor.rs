@@ -257,6 +257,8 @@ pub struct Editor {
     pub ik_chain: usize,
     /// The selected reference picture.
     pub selected_ref: Option<usize>,
+    /// The selected lamp (`Scene::lights` id). Selecting a lamp clears the object selection and the other way round.
+    pub selected_light: Option<u32>,
     /// Paint on the model through the screen (a round brush on the visible surface) instead of through the UV map.
     pub project_paint: bool,
     proj: Option<ProjStroke>,
@@ -268,6 +270,9 @@ pub use editmode::*;
 #[path = "editor/extras.rs"]
 mod extras;
 pub use extras::*;
+#[path = "editor/lamps.rs"]
+mod lamps;
+pub use lamps::*;
 
 impl Default for Editor {
     fn default() -> Self {
@@ -326,6 +331,7 @@ impl Editor {
             edit: None,
             ik_chain: 0,
             selected_ref: None,
+            selected_light: None,
             project_paint: false,
             proj: None,
         }
@@ -558,8 +564,10 @@ impl Editor {
         let rigged = ed.project.scene.objects.iter().find(|o| ed.project.assets.get(o.asset).is_some_and(|a| a.model.skeleton.is_some())).map(|o| o.id);
         ed.selected_object = rigged.or_else(|| ed.project.scene.objects.first().map(|o| o.id));
         ed.frame_all();
-        // a project with a camera set up for its first frame opens looking through it, so it appears the way it was composed
-        if let Some(cam) = ed.project.animations.first().and_then(|a| a.frames.first()).map(|f| f.camera).filter(|c| *c != Camera::default()) {
+        // a project with a camera set up (for its first frame, or for the scene when it has no animation) opens looking
+        // through it, so it appears the way it was composed
+        let first = ed.project.animations.first().and_then(|a| a.frames.first()).map(|f| f.camera);
+        if let Some(cam) = first.or(Some(ed.project.scene.camera)).filter(|c| *c != Camera::default()) {
             ed.view = ViewCam::from_camera(&cam);
         }
         Ok(ed)
@@ -582,6 +590,7 @@ impl Editor {
         }
     }
     pub fn select_object(&mut self, id: Option<u32>) {
+        self.selected_light = None;
         if self.selected_object != id {
             self.selected_bone = None;
             self.selected_faces.clear();
@@ -652,6 +661,9 @@ impl Editor {
         if self.selected_object.is_some_and(|id| self.project.scene.object(id).is_none()) {
             self.selected_object = None;
             self.selected_bone = None;
+        }
+        if self.selected_light.is_some_and(|id| self.project.scene.light(id).is_none()) {
+            self.selected_light = None;
         }
         self.selected_faces.clear();
     }
@@ -744,6 +756,7 @@ impl Editor {
     fn render_core_opts(&self, r: &mut Renderer, cam: Camera, style: &PsxStyle, layers: bool) {
         if self.animating() {
             let a = self.animation().unwrap();
+            let time = if self.playing { self.tick as f32 } else { a.frame_start(self.current_frame.min(a.frames.len() - 1)) as f32 } / a.fps().max(1e-3);
             let (states, f): (Cow<[ObjectState]>, &AnimFrame) = if self.playing {
                 match a.eval(self.tick) {
                     Some(ev) => (Cow::Owned(ev.states), &a.frames[ev.frame_index]),
@@ -753,10 +766,10 @@ impl Editor {
                 let f = &a.frames[self.current_frame.min(a.frames.len() - 1)];
                 (Cow::Borrowed(&f.states[..]), f)
             };
-            render_states(&self.project, &FrameSpec { states: &states, camera: cam, style, hand_layer: f.hand_layer.as_ref(), hand_only: f.hand_only, scene_layers: layers }, r);
+            render_states(&self.project, &FrameSpec { states: &states, camera: cam, style, hand_layer: f.hand_layer.as_ref(), hand_only: f.hand_only, scene_layers: layers, time }, r);
         } else {
             let states = scene_states(&self.project);
-            render_states(&self.project, &FrameSpec { states: &states, camera: cam, style, hand_layer: None, hand_only: false, scene_layers: layers }, r);
+            render_states(&self.project, &FrameSpec { states: &states, camera: cam, style, hand_layer: None, hand_only: false, scene_layers: layers, time: 0.0 }, r);
         }
     }
     /// Renders an arbitrary frame of the current animation (used for the onion-skin ghosts of neighbouring frames).
@@ -778,7 +791,7 @@ impl Editor {
     }
     fn render_frame_with(&self, f: &AnimFrame, r: &mut Renderer, style: PsxStyle) {
         let cam = if self.through_camera { f.camera } else { self.view.camera() };
-        render_states(&self.project, &FrameSpec { states: &f.states, camera: cam, style: &style, hand_layer: f.hand_layer.as_ref(), hand_only: f.hand_only, scene_layers: true }, r);
+        render_states(&self.project, &FrameSpec { states: &f.states, camera: cam, style: &style, hand_layer: f.hand_layer.as_ref(), hand_only: f.hand_only, scene_layers: true, time: 0.0 }, r);
     }
     pub fn onion_indices(&self) -> (Option<usize>, Option<usize>) {
         let Some(a) = self.animation() else { return (None, None) };

@@ -492,3 +492,153 @@ fn fast_write_back_equals_the_reference() {
         assert_eq!(em.to_meshes(), reference_to_meshes(em), "case {i}");
     }
 }
+
+#[test]
+fn extrude_individual_keeps_every_face_selected() {
+    let mut em = cube();
+    let t = top_face(&em);
+    let side = (0..em.faces.len() as u32).find(|&f| em.face_normal(f).x > 0.9).unwrap();
+    select_faces(&mut em, &[t, side]);
+    assert_eq!(em.extrude_individual(), 2);
+    assert_eq!(em.sel_f.len(), 2);
+    assert!(em.sel_f.contains(&t) && em.sel_f.contains(&side));
+    assert_eq!(em.sel_v.len(), 8, "the two caps have their own corners");
+    assert_eq!(em.faces.len(), 6 + 4 + 4);
+    check(&em, true);
+}
+
+fn wire_profile() -> EditMesh {
+    // a cup-like profile in the XY plane: rim, wall, bottom ending on the Y axis
+    let mut em = EditMesh::default();
+    let pts = [Vec3::new(1.0, 2.0, 0.0), Vec3::new(1.0, 0.5, 0.0), Vec3::new(0.6, 0.0, 0.0), Vec3::new(0.0, 0.0, 0.0)];
+    for p in pts {
+        em.add_vert(p);
+    }
+    for i in 0..3 {
+        em.wires.insert(ek(i, i + 1));
+    }
+    em.parts.push(Part { name: "Cup".into(), material: 0 });
+    em.select_all(true);
+    em
+}
+
+#[test]
+fn spin_a_profile_into_a_closed_lathe() {
+    let mut em = wire_profile();
+    let made = em.spin(Vec3::ZERO, Vec3::Y, 360.0, 8);
+    // two edges off the axis give quads, the one touching it gives triangles
+    assert_eq!(made, 24);
+    assert_eq!(em.faces.iter().filter(|f| f.c.len() == 3).count(), 8);
+    assert_eq!(em.verts.len(), 3 * 8 + 1, "the vertex on the axis is shared");
+    assert!(em.wires.is_empty());
+    check(&em, false);
+    // every polygon faces away from the axis or down (outwards)
+    for f in 0..em.faces.len() as u32 {
+        let c = em.face_center(f);
+        let n = em.face_normal(f);
+        assert!(n.dot(Vec3::new(c.x, 0.0, c.z)) > -1e-4 && (n.y < 0.5), "face {f} points inwards: {n:?}");
+    }
+    // the last copy of the profile (the original for a full turn) is selected
+    assert_eq!(em.sel_v.len(), 4);
+    // a half turn leaves the seam open and adds the end profile
+    let mut em = wire_profile();
+    assert_eq!(em.spin(Vec3::ZERO, Vec3::Y, 180.0, 4), 12);
+    assert_eq!(em.verts.len(), 3 * 5 + 1);
+    check(&em, false);
+}
+
+#[test]
+fn spin_a_face_makes_a_solid() {
+    let square = |em: &mut EditMesh| {
+        let a = em.add_vert(Vec3::new(1.0, 0.0, 0.0));
+        let b = em.add_vert(Vec3::new(2.0, 0.0, 0.0));
+        let c = em.add_vert(Vec3::new(2.0, 1.0, 0.0));
+        let d = em.add_vert(Vec3::new(1.0, 1.0, 0.0));
+        em.faces.push(EFace { c: [a, b, c, d].map(Corner::new).to_vec(), part: 0, smooth: false });
+    };
+    for angle in [90.0f32, -90.0] {
+        let mut em = EditMesh::default();
+        em.parts.push(Part { name: "P".into(), material: 0 });
+        square(&mut em);
+        select_faces(&mut em, &[0]);
+        let made = em.spin(Vec3::ZERO, Vec3::Y, angle, 4);
+        assert_eq!(made, 16 + 1, "four walls per step and a start cap");
+        check(&em, true);
+        let v = volume(&em);
+        // a quarter of a ring with radii 1..2 and height 1, made of 4 flat segments
+        assert!(v > 2.0 && v < 2.4, "volume {v} for {angle}°");
+        assert_eq!(em.sel_f.len(), 1, "the moved face is selected");
+    }
+    // a full turn gives a closed ring without caps
+    let mut em = EditMesh::default();
+    em.parts.push(Part { name: "P".into(), material: 0 });
+    square(&mut em);
+    select_faces(&mut em, &[0]);
+    em.spin(Vec3::ZERO, Vec3::Y, 360.0, 12);
+    check(&em, true);
+    assert_eq!(em.faces.len(), 48);
+    assert!(volume(&em) > 4.0);
+}
+
+#[test]
+fn solidify_plane_and_open_box() {
+    let mut em = EditMesh::from_meshes(&[modeling::plane(2.0, 2.0, 1, 1)]);
+    assert_eq!(em.faces.len(), 1);
+    assert_eq!(em.solidify(0.1), 1 + 4);
+    check(&em, true);
+    assert!((volume(&em) - 0.4).abs() < 1e-3, "volume {}", volume(&em));
+    // negative thickness grows outwards and still faces out
+    let mut em = EditMesh::from_meshes(&[modeling::plane(2.0, 2.0, 1, 1)]);
+    em.solidify(-0.1);
+    check(&em, true);
+    assert!((volume(&em) - 0.4).abs() < 1e-3);
+    // a box without its top: walls get an even thickness
+    let mut em = cube();
+    let t = top_face(&em);
+    select_faces(&mut em, &[t]);
+    em.delete(DeleteKind::Faces);
+    em.select_all(false);
+    assert_eq!(em.solidify(0.05), 5 + 4);
+    check(&em, true);
+    let v = volume(&em);
+    let inner = 0.9 * 0.9 * 0.95;
+    assert!((v - (1.0 - inner)).abs() < 1e-3, "volume {v}");
+}
+
+#[test]
+fn array_copies_and_welds() {
+    let mut em = cube();
+    em.select_all(true);
+    assert_eq!(em.array(3, Vec3::new(1.5, 0.0, 0.0), true), 2);
+    check(&em, true);
+    assert_eq!(em.verts.len(), 24);
+    assert!((volume(&em) - 3.0).abs() < 1e-4);
+    assert_eq!(em.sel_v.len(), 24);
+    let mut em = cube();
+    em.select_all(false);
+    em.array(2, Vec3::new(1.0, 0.0, 0.0), true);
+    assert_eq!(em.verts.len(), 12, "touching copies share their vertices");
+    assert!((em.selection_size().x - 2.0).abs() < 1e-5);
+}
+
+#[test]
+fn poke_and_to_sphere() {
+    let mut em = cube();
+    let t = top_face(&em);
+    select_faces(&mut em, &[t]);
+    assert_eq!(em.poke(0.5), 1);
+    check(&em, true);
+    assert_eq!(em.faces.len(), 9);
+    assert_eq!(em.sel_f.len(), 4);
+    assert!((volume(&em) - (1.0 + 0.5 / 3.0)).abs() < 1e-4);
+    let mut em = cube();
+    em.select_all(true);
+    em.subdivide();
+    em.select_all(true);
+    let c = em.selection_center().unwrap();
+    assert!(em.to_sphere(1.0) > 8);
+    let d: Vec<f32> = (0..em.verts.len() as u32).map(|v| (em.pos(v) - c).length()).collect();
+    let (lo, hi) = d.iter().fold((f32::MAX, 0.0f32), |(a, b), &x| (a.min(x), b.max(x)));
+    assert!(hi - lo < 1e-4, "{lo}..{hi}");
+    check(&em, true);
+}

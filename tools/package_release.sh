@@ -39,7 +39,7 @@ cp tools/release/jank.desktop tools/release/jank.png tools/release/install.sh "$
 cat > "$STAGE/START_HERE.txt" <<TXT
 Jank! $FULL (build $BUILD) for Linux $ARCH
 
-Start:    ./jank            (or ./jank demo/bunnies.jank)
+Start:    ./jank            (or ./jank demo/night-shrine.jank, ./jank demo/bunnies.jank)
 Install:  ./install.sh      (puts Jank! into ~/.local/bin and the applications menu)
 Remove:   ./install.sh --remove
 

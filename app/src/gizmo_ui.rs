@@ -36,7 +36,7 @@ fn axis_color(a: Axis) -> Color32 {
 impl App {
     /// True when handles should be shown and can be grabbed.
     pub fn gizmo_visible(&self) -> bool {
-        if self.gizmo.mode.is_none() || self.ed.selected_object.is_none() {
+        if self.gizmo.mode.is_none() || !self.ed.has_gizmo_target() {
             return false;
         }
         match self.ed.mode {
@@ -168,16 +168,16 @@ impl App {
         let to_px = |p: Pos2| ((p.x - img.min.x) / sc, (p.y - img.min.y) / sc);
         // a drag in progress
         if let Some(drag) = self.vp.gizmo.clone() {
-            let Some(id) = self.ed.selected_object else {
+            if !self.ed.has_gizmo_target() {
                 self.vp.gizmo = None;
                 return false;
-            };
+            }
             if down {
                 if let Some(p) = pos {
                     let cam = self.ed.active_camera();
                     let t = drag.update(&cam, to_px(p), view, self.gizmo_snap(mods.ctrl));
                     self.vp.gizmo_text = describe(&drag, &t);
-                    self.ed.set_object_transform(id, t);
+                    self.ed.set_gizmo_transform(t);
                 }
                 ctx.request_repaint();
             } else {
@@ -191,8 +191,8 @@ impl App {
         if !self.gizmo_visible() || mods.alt {
             return false;
         }
-        let (Some(id), Some(mode)) = (self.ed.selected_object, self.gizmo.mode) else { return false };
-        let Some(t) = self.ed.object_transform(id) else { return false };
+        let Some(mode) = self.gizmo.mode else { return false };
+        let Some(t) = self.ed.gizmo_transform() else { return false };
         let cam = self.ed.active_camera();
         if hover {
             if let Some(p) = pos {
@@ -226,8 +226,8 @@ impl App {
         if !self.gizmo_visible() {
             return;
         }
-        let (Some(id), Some(mode)) = (self.ed.selected_object, self.gizmo.mode) else { return };
-        let Some(t) = self.ed.object_transform(id) else { return };
+        let Some(mode) = self.gizmo.mode else { return };
+        let Some(t) = self.ed.gizmo_transform() else { return };
         let cam = self.ed.active_camera();
         let view = self.gizmo_view(sc, w, h);
         let at = |v: Vec3| cam.project(v, w, h).map(|(x, y, _)| pos2(img.min.x + x * sc, img.min.y + y * sc));

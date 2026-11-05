@@ -10,6 +10,7 @@ mod editui;
 mod extras_ui;
 mod gizmo_ui;
 mod icons;
+mod lights_ui;
 mod paintui;
 mod colorpick;
 mod panels;
@@ -20,6 +21,7 @@ mod preview;
 mod sysdate;
 mod texview;
 mod theme;
+mod themeart;
 mod timeline;
 mod viewport;
 mod widgets;
@@ -110,6 +112,12 @@ pub struct App {
     pub graph: extras_ui::GraphState,
     /// Built-in themes and the user's theme files.
     pub themes: Vec<psxcore::themes::Theme>,
+    /// Pictures of the active theme.
+    pub art: themeart::ThemeArt,
+    /// Problems found in the theme files (shown in Settings → Appearance).
+    pub theme_problems: Vec<String>,
+    /// Jank draws its own title bar (the window has no system decorations). Fixed at start-up.
+    pub custom_titlebar: bool,
     /// The object that cuts the selected one in a boolean.
     pub bool_cutter: Option<u32>,
     pub bool_delete: bool,
@@ -210,6 +218,9 @@ impl App {
             radial: None,
             graph: extras_ui::GraphState { only_selected: true, ..Default::default() },
             themes: psxcore::themes::builtin(),
+            art: Default::default(),
+            theme_problems: vec![],
+            custom_titlebar: false,
             bool_cutter: None,
             bool_delete: false,
             ik_len: 2,
@@ -370,6 +381,8 @@ impl eframe::App for App {
         }
         self.poll_job(ctx);
 
+        themeart::paint_background(ctx, &self.art);
+        self.resize_edges(ctx);
         self.menu_bar(ctx);
         self.status_bar(ctx);
         self.ribbon(ctx);
@@ -476,9 +489,11 @@ impl eframe::App for Shell {
             }
             let loaded = *self.boot.done.take().expect("loader finished");
             let settings = self.settings.take().unwrap_or_default();
-            let app = App::from_loaded(settings, std::mem::take(&mut self.problems), loaded);
+            let custom = !settings.system_title_bar;
+            let mut app = App::from_loaded(settings, std::mem::take(&mut self.problems), loaded);
+            app.custom_titlebar = custom;
             if self.splash.take().is_some() {
-                compat::enter_main(ctx, &app.ed.title(), MAIN_SIZE, MAIN_MIN);
+                compat::enter_main(ctx, &app.ed.title(), MAIN_SIZE, MAIN_MIN, !custom);
             }
             self.app = Some(app);
             ctx.request_repaint();
@@ -502,7 +517,8 @@ fn main() -> eframe::Result {
     let with_splash = !cli.no_splash;
     let seed = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_nanos() as u64 / 1000);
     let boot = startup::Boot::spawn(season, seed, cli.path);
-    compat::run("Jank!", MAIN_SIZE, MAIN_MIN, with_splash.then_some(splash::SPLASH_SIZE), move |ctx| {
+    let decorations = settings.system_title_bar;
+    compat::run("Jank!", MAIN_SIZE, MAIN_MIN, with_splash.then_some(splash::SPLASH_SIZE), decorations, move |ctx| {
         theme::apply(ctx);
         Box::new(Shell { boot, splash: with_splash.then(splash::Splash::new), app: None, settings: Some(settings), problems })
     })

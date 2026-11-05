@@ -6,7 +6,7 @@ A short tour of the program. Hold the mouse over any control to see its tooltip,
 
 ## The window
 
-- **Menu bar**: File, Edit, Model, Mesh, Paint, Animation, View, Help. *Help → What's new* lists the changes of this version.
+- **Title bar and menu bar** in one strip: File, Edit, Model, Mesh, Paint, Animation, View, Help, the project name, *Search commands* and the window buttons. Drag the strip to move the window, double-click it to maximise; the window can be resized from every edge. *Settings → Interface → Window* brings back the title bar of your system (after a restart). *Help → What's new* lists the changes of this version.
 - **Mode tabs** (keys `1`-`5`): Model, Texture, Pose, Animate, Render.
 - **Viewport** in the middle: the 3D scene. Drag with the middle or right mouse button (or Alt + left) to orbit, hold Shift to pan, scroll to zoom. `Home` frames everything.
 - **Right panel** with tabs: Scene, Look, World, Output.
@@ -54,8 +54,20 @@ Press `Tab` (or *Edit mesh*) to edit the selected object's vertices, edges and p
 | Duplicate, delete, dissolve, merge | `Shift+D`, `X`, `Ctrl+X`, `M` |
 | Proportional editing, X-ray | `O` (wheel changes the radius while moving), `Alt+Z` |
 | UV unwrap from seams | `U` |
+| Extrude each face on its own, to sphere | `Alt+E`, `Alt+Shift+S` |
 
-The left panel has every tool as a button, plus subdivide, bridge, triangulate, tris to quads, normals, smooth and flat shading, symmetrize, seams, mirror editing and Boolean inside the mesh (selected faces against the rest). Quads and n-gons are kept when you save.
+The left panel has every tool as a button, plus subdivide, bridge, triangulate, tris to quads, normals, smooth and flat shading, symmetrize, seams, mirror editing and Boolean inside the mesh (selected faces against the rest). Quads and n-gons are kept when you save. The *Mesh* menu holds the same tools, with *Normals and shading*, *UV* and *Select and show* in submenus.
+
+**Shape tools** (the *Shape* section of the left panel):
+
+- **Spin**: sweeps the selected edges or faces around an axis (X, Y, Z or the view direction), like a lathe. Set the angle (360° closes the ring) and the number of steps; by default it turns around the object's centre, *Around the selection's centre* uses the selection instead. Draw half the outline of a vase, a lantern or a column with edges, then spin it.
+- **Solidify**: gives the selected faces an even thickness, with a rim along their border (a negative value grows outwards).
+- **Array**: repeats the selection along X, Y or Z; the step is measured in sizes of the selection (1 = touching), *Weld* merges the vertices where copies touch.
+- **Poke**: splits each selected face into a fan around its centre; a depth above 0 raises the middle into a point.
+- **To sphere**: rounds the selection towards a sphere (1 = fully).
+- **Extrude each face** (`Alt+E`) and **Extrude along normals** push every face out on its own or along its own direction instead of as one block.
+
+![Edit mode on a stone lantern of the night shrine (spun from one profile) with the Shape tools on the left](img/shape.webp)
 
 ## 2. Texture
 
@@ -84,6 +96,34 @@ Imported glTF/GLB models with a skeleton can be posed (the bunnies of `demo/bunn
 - **World** tab: turn on *Time of day* and move the hour (sun 06:00-18:00, moon 18:00-06:00). Choose a shadow mode: *Off*, *Blob* (soft spots under objects) or *Cast* (real shadows; set strength, softness and quality).
 - **Output** tab / `Ctrl+E`: save a photo (PNG, JPEG, BMP, TGA, PPM) or a video (GIF, AVI).
 
+## Lamps
+
+Lamps light the scene around them: candles, lanterns, neon signs, campfires, fireflies, spotlights. They are in the **Scene** tab on the right, under *Lamps*: *Add lamp…* offers presets (Bulb, Candle, Lantern, Campfire, Torch, Neon, Moonbeam, Spotlight, Firefly). A new lamp appears at the selected object (or where the view looks); drag its handles in the viewport or type its position.
+
+- **Point** lamps shine in every direction, **Spot** lamps in a cone (set the cone, the soft edge and the aim).
+- *brightness*, *reach* (metres until the light is gone) and *falloff* shape the pool of light; *flicker* makes it waver like a flame during playback (the same every time); *halo* draws a glow around the lamp itself.
+- *attached to*: hang the lamp on an object, for example a candle flame on its candle; it then moves with the object in every animation frame.
+- The eye in the list switches a lamp on and off; right-click for *Duplicate* and *Delete*. Lamps are drawn as small suns in the lamp's colour; click one to select it.
+
+![A paper lantern lamp selected in the night shrine, with its settings on the right](img/lamps.webp)
+
+## Look: style presets and modern effects
+
+The **Look** tab sets the whole picture. **Style presets** set everything in one click: *PS1 Classic*, *Lo-Fi Calm*, *Clean Low-Poly*, *Horror Fog*, *Night Glow* (made for lamps at night) and *CRT Arcade*. The render resolution stays as it is.
+
+Below the retro settings and the mood, **Modern effects** add touches the PlayStation never had:
+
+- **Pixel lamps**: light is worked out for every pixel, so lamps make round, smooth pools even on big faces. Off: per vertex, the PS1 way.
+- **Tone curve** (*Off*, *Soft*, *Filmic*) and **exposure**: very bright light rolls off instead of burning to white.
+- **Bloom** (with threshold and size): bright parts glow.
+- **Contact shadows** (ambient occlusion) with their reach: soft darkening in corners, creases and where objects touch.
+- **Lamp halos**: the glow of each lamp's *halo*.
+- **CRT curve**, **CRT mask** and **colour fringes**: the glass, the RGB stripes and the colour fringing of an old screen.
+
+On a slow computer, *Settings → Viewport → Viewport effects* draws them cheaper in the editing view (*Light* keeps lamps per vertex and drops contact shadows and bloom; *Off* shows the plain retro picture). Renders, exports and the preview window always use the full style.
+
+![The Look tab with the Night Glow preset and its modern effects](img/effects.webp)
+
 ## Radial menu
 
 Hold `Space` over the view, point at a tool and release (or tap `Space` and click), as in Krita. The ring shows the tools of the current mode - mesh tools in Edit mode, brushes and recent colours while painting.
@@ -94,9 +134,9 @@ Hold `Space` over the view, point at a tool and release (or tap `Space` and clic
 
 `Ctrl+Comma` (or the gear at the bottom of the ribbon) opens Settings:
 
-- **Appearance**: theme (six built in, one light; *Save a copy to edit* writes a `.theme` text file you can change, *Reload theme files* picks up your edits), accent colour, Compact or Comfortable spacing, text size, the tool strip, the status bar and the frame rate in it.
-- **Interface**: interface scale, tooltips, reduced motion, panel layout.
-- **Viewport**: sharpness, *Viewport shadows* (like the render, up to Medium, Blob or Off - only the editing view, never the render or export), redraw only when something changes, orbit and zoom speed, inverted vertical orbit, render threads, the preview window.
+- **Appearance**: theme (seven built in, one light; *Install example themes* adds Shrine Night and Blueprint, which bring pictures; *Save a copy to edit* writes a `.theme` text file with every key explained, and Jank! picks up your edits while it runs - see [THEMES.md](THEMES.md)), accent colour, Compact or Comfortable spacing, text size, the tool strip, the status bar and the frame rate in it.
+- **Interface**: interface scale, tooltips, reduced motion, panel layout, *Use the system title bar* (after a restart).
+- **Viewport**: sharpness, *Viewport shadows* (like the render, up to Medium, Blob or Off) and *Viewport effects* (like the render, Light or Off) - only the editing view, never the render or export -, redraw only when something changes, orbit and zoom speed, inverted vertical orbit, render threads, the preview window.
 - **Canvas & animation**: pixel grid of the texture editor, onion-skin strength, composition guides for Render mode (thirds, centre, safe area, golden ratio).
 - **Discord**: show *Playing Jank!* on your Discord profile; choose whether the project name, the details and the time are shown. The card below the switches shows exactly what your friends will see (see [DISCORD.md](DISCORD.md)).
 
@@ -116,6 +156,10 @@ Settings and key bindings go to your XDG config folder, autosave to the XDG stat
 Open `demo/bunnies.jank` with `File > Open project`: two plush bunnies on a pink rug in warm evening light. Both were made from photos: the outline gives the shape, the photo becomes the texture (front and back), and each has a skeleton - the cream bunny moves its ears, paws and feet in a short *Idle* loop.
 
 Things to try: press `Shift+Space` to play, `3` to see the bones, `2` for the texture, `5` for the render, select a bunny and press `Tab` for its polygons, or open the World tab to change the light and the shadows.
+
+`demo/night-shrine.jank` shows the lamps and the modern effects: a small shrine at night with stone and paper lanterns, candles, a glowing vending machine, a moonbeam and fireflies, about 25 lamps in the *Night Glow* style. Open the Look tab to switch presets, or select a lamp in the Scene tab and change its colour. It was built with the new mesh tools: the stone and paper lanterns with *Spin*, the curved top beam of the torii with *Solidify*, the stone path and the shrine steps with *Array*, the shrine roof with *Poke*.
+
+![The night shrine demo](img/shrine.webp)
 
 More samples are in `demo/`: `butterfly.jank` (a rigged butterfly over a meadow, with time of day) and `friend.jank` (a singing worm).
 

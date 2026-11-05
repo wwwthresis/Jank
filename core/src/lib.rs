@@ -6,6 +6,8 @@ pub mod texture;
 pub mod import;
 pub mod pose;
 pub mod raster;
+pub mod effects;
+pub mod lights;
 pub mod shadow;
 pub mod decimate;
 pub mod modeling;

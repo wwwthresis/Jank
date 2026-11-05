@@ -1,0 +1,44 @@
+# Blueprint: an example Jank! theme with a tiled picture behind see-through panels.
+# Copy it, change it and save: Jank picks the change up while it runs. Every key is explained in a file
+# written by Settings → Appearance → "Save a copy to edit" and in docs/THEMES.md.
+name = Blueprint
+light = false
+accent = #ffd36e
+
+bg0 = #0f2a4a
+bg1 = #143457
+bg2 = #1c4370
+bg3 = #255284
+line = #3f72a8
+line_soft = #23497a
+text = #eaf2ff
+dim = #9db6d6
+hilite = #3a6aa0
+shade = #0a1d33
+viewport = #0d2440
+
+# single parts of the window
+titlebar = #0b2240
+titlebar_text = #ffd36e
+statusbar = #0b2240
+statusbar_text = #bcd2ee
+window = #12315a
+window_border = #5d8fc6
+button = #1a4170
+button_hover = #23548a
+input = #0d2643
+timeline_frame = #1f4a7a
+playhead = #ffd36e
+
+# sizes
+radius = 2
+window_radius = 4
+menu_radius = 3
+border = 1
+shadow = 0.6
+bevel = 0
+panel_opacity = 0.88
+
+# the grid shows through the panels
+background = blueprint-grid.png
+background_mode = tile

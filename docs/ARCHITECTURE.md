@@ -7,19 +7,19 @@ Two crates, one direction of dependency: `jank` (GUI) -> `psxcore` (engine). The
 | Area | Modules |
 |---|---|
 | Math / data | `math`, `mesh`, `scene`, `texture`, `pose`, `anim`, `json`, `fasthash` (small deterministic hash map used by the mesh code; no randomised seeds, so Edit-mode results are the same on every run) |
-| Geometry ops | `modeling`, `decimate` (QEM), `selection`, `uvisland`, `gizmo`, `editmesh` (polygon mesh of Edit mode: `mod` conversion to and from triangle meshes, `select` loops/rings/paths/linked, `ops` extrude, inset, loop cut, knife, merge, dissolve, fill, bridge, ..., `bevel`, `boolean` (BSP-tree CSG on closed meshes, welded and merged back into clean polygons), `uv` seams unwrap), `ik` (CCD chain solver on skeleton poses) |
-| Drawing | `paint`, `palette`, `layers` (layer stacks, blending), `lighting` (time of day, shadow settings), `raster` (multithreaded banded software PSX rasterizer: scene layers behind and in front), `shadow` (shadow map: multithreaded depth from the light, block min/max tables for one-lookup fully-lit/fully-shadowed tests, soft PCF lookup, a small cache of maps reused while only the camera moves), `compose` (scene to render instances, shadow inputs) |
-| Editor state | `editor` (modes, tools, undo/redo, selection, pixel clipboard); `editor/editmode` (Edit-mode session: selection, modal grab/rotate/scale with axis locks and typed values, proportional editing, undo as one step per operation); `editor/extras` (booleans, reference pictures, IK drags, graph keys and easing, indexed colour, projection painting) |
+| Geometry ops | `modeling`, `decimate` (QEM), `selection`, `uvisland`, `gizmo`, `editmesh` (polygon mesh of Edit mode: `mod` conversion to and from triangle meshes, `select` loops/rings/paths/linked, `ops` extrude, inset, loop cut, knife, merge, dissolve, fill, bridge, ..., `bevel`, `boolean` (BSP-tree CSG on closed meshes, welded and merged back into clean polygons), `shape` spin, solidify, array, poke, to sphere, `uv` seams unwrap), `ik` (CCD chain solver on skeleton poses) |
+| Drawing | `paint`, `palette`, `layers` (layer stacks, blending), `lighting` (time of day, shadow settings), `lights` (lamps: point and spot lights, presets, flicker, attachment to objects, per-vertex and per-pixel evaluation), `effects` (picture-wide passes after the triangles: ambient occlusion from the depth picture, lamp halos, bloom at reduced resolution, CRT screen; row-parallel, identical for any thread count), `raster` (multithreaded banded software PSX rasterizer: scene layers behind and in front), `shadow` (shadow map: multithreaded depth from the light, block min/max tables for one-lookup fully-lit/fully-shadowed tests, soft PCF lookup, a small cache of maps reused while only the camera moves), `compose` (scene to render instances, shadow inputs) |
+| Editor state | `editor` (modes, tools, undo/redo, selection, pixel clipboard); `editor/editmode` (Edit-mode session: selection, modal grab/rotate/scale with axis locks and typed values, proportional editing, undo as one step per operation); `editor/extras` (booleans, reference pictures, IK drags, graph keys and easing, indexed colour, projection painting); `editor/lamps` (adding lamps from presets, picking, moving with the gizmo, attaching to objects) |
 | Files | `project` (`.jank`), `import` (OBJ/STL/PLY), `gltf`, `export`, `decode/*`, `encode/*` (PNG, JPEG, BMP, TGA, PPM, GIF, AVI, deflate), `jobs` |
-| Application services | `commands` (command catalogue + fuzzy search), `keymap` (remappable chords), `settings`, `themes` (built-in themes and `*.theme` files), `discord` (Rich Presence over Discord's local IPC socket: frames, connection thread, activity texts), `recovery` (autosave/crash), `filebrowser`, `splash` (season table), `version` |
+| Application services | `commands` (command catalogue + fuzzy search), `keymap` (remappable chords), `settings`, `themes` (built-in themes and `*.theme` files: 16 base colours, 20 part colours with fallbacks, 11 sizes, 9 picture places, the commented template, example themes - see THEMES.md), `discord` (Rich Presence over Discord's local IPC socket: frames, connection thread, activity texts), `recovery` (autosave/crash), `filebrowser`, `splash` (season table), `version` |
 
 ## jank (`app/src`)
 
 | Module | Role |
 |---|---|
 | `main` | `App`, update loop, panel order, shortcuts |
-| `chrome` | menu bar, Obsidian-style ribbon, Aseprite-style tool strip, status bar |
-| `theme` | the design system (colours, fonts, egui `Visuals`/`Style`) - see DESIGN_SYSTEM.md |
+| `chrome` | title bar merged with the menu bar (window buttons, drag to move, resize edges), Obsidian-style ribbon, Aseprite-style tool strip, status bar |
+| `theme`, `themeart` | the design system (colours, sizes, fonts, egui `Visuals`/`Style`) - see DESIGN_SYSTEM.md; the pictures of the active theme as textures, reloaded when the file changes on disk |
 | `widgets` | bevelled buttons and tool cells, ribbon buttons, tabs, foldable sections, tree rows, toggles, swatches, tooltips |
 | `icons` | 16×16 pixel icons (`icon_data.rs`, generated by `tools/gen_icons.py`) in one tinted atlas texture |
 | `panels`, `texview`, `timeline`, `viewport`, `gizmo_ui` | mode panels, texture editor, animation strip, 3D view, gizmo overlay |
@@ -28,6 +28,7 @@ Two crates, one direction of dependency: `jank` (GUI) -> `psxcore` (engine). The
 | `paintui`, `colorpick`, `preview`, `perf` | drawing studio (layers, selection, palettes), colour wheel, render preview window, frame statistics |
 | `editui` | Edit mode: mesh commands, modal keys, mouse input (select, box, loop cut, knife), overlays (vertices, edges, face dots), tool panel |
 | `extras_ui` | radial menu, booleans, reference pictures, IK, indexed colour, What's new, themes section, hover outline and edit tint (overlay surface), graph editor and ease editor |
+| `lights_ui` | Scene tab → Lamps: list, presets, lamp settings, markers in the viewport |
 | `discord_ui` | editor state → Discord activity once a second, Settings → Discord |
 | `compat` | the only place that touches version-sensitive egui calls |
 
@@ -37,7 +38,7 @@ Rules: new logic goes into `core` with tests first; `app` only draws and forward
 
 ## Rendering order
 
-`compose::render_states` turns the scene into instances (applying time of day) and, when shadows are on, builds a `ShadowMap`. `Renderer::render_layered` then draws the layers behind the model, the model, the shadow pass, the layers in front, and finally the post effects.
+`compose::render_states` turns the scene into instances (applying time of day) and, when shadows are on, builds a `ShadowMap`. `Renderer::render_layered` then draws the layers behind the model, the model, the shadow pass, then - when the style has modern effects - contact shadows, lamp halos and bloom (`effects.rs`), the layers in front, the post effects (mood, tone curve, dithering) and finally the CRT screen. Lamps are added per vertex, or per pixel when the style has *Pixel lamps*; the viewport can cap all of this (`Renderer::effects_cap`, Settings → Viewport effects).
 
 Shadow pass (`core/src/shadow.rs`): every casting object is drawn into a depth map seen from the light (orthographic, resolution 256-2048 by quality). For each visible pixel the renderer rebuilds its world position from the stored depth, compares it to the map with a soft PCF filter and darkens it. A per-triangle light factor keeps faces that already turn away from the light from shadowing themselves. Cut-out texels (alpha below 128) cast no shadow. Blob mode draws soft ellipsoids instead (128 px map).
 

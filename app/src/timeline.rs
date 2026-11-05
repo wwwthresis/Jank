@@ -7,11 +7,12 @@ use eframe::egui::{self, pos2, vec2, Align2, Context, Rect, ScrollArea, Sense, T
 
 impl App {
     pub fn timeline_panel(&mut self, ctx: &Context) {
-        let mut panel = TopBottomPanel::bottom("timeline").resizable(true).default_height(self.settings.layout.timeline_height).height_range(150.0..=420.0).frame(compat::frame(BG1(), 8.0).stroke(compat::stroke(1.0, SHADE())));
+        let mut panel = TopBottomPanel::bottom("timeline").resizable(true).default_height(self.settings.layout.timeline_height).height_range(150.0..=420.0).frame(compat::frame(panel_fill(TIMELINE()), 8.0).stroke(compat::stroke(1.0, SHADE())));
         if self.layout_reset {
             panel = panel.exact_height(self.settings.layout.timeline_height);
         }
         let shown = panel.show(ctx, |ui| {
+            self.art.paint_panel(ui, crate::themeart::Slot::Timeline, vec2(8.0, 8.0));
             self.hover_timeline = ui.rect_contains_pointer(ui.max_rect());
             let Some(anim) = self.ed.animation() else { return };
             let (n, total, fps, dur) = (anim.frames.len(), anim.total_ticks(), anim.fps(), anim.duration_secs());
@@ -125,13 +126,13 @@ impl App {
                     let p = ui.painter();
                     let head = Rect::from_min_size(rect.min, vec2(w, 18.0));
                     let cel = Rect::from_min_max(pos2(rect.min.x, head.max.y + 1.0), rect.max);
-                    p.rect_filled(head, compat::cr(0.0), if sel { accent() } else { mix(BG0(), BG2(), hov) });
+                    p.rect_filled(head, compat::cr(0.0), if sel { PLAYHEAD() } else { mix(BG0(), TIMELINE_FRAME(), hov) });
                     compat::text(p, head.center(), Align2::CENTER_CENTER, &(i + 1).to_string(), 11.5, if sel { BRIGHT() } else { DIM() });
-                    let col_fill = if sel { mix(BG2(), accent(), 0.22) } else { mix(BG2(), BG3(), hov) };
+                    let col_fill = if sel { mix(TIMELINE_FRAME(), PLAYHEAD(), 0.22) } else { mix(TIMELINE_FRAME(), BG3(), hov) };
                     crate::widgets::bevel(p, cel.shrink2(vec2(1.0, 0.0)), accent(), hov, false, false);
                     p.rect_filled(cel.shrink2(vec2(2.0, 2.0)), compat::cr(1.0), col_fill);
                     if sel {
-                        compat::stroke_rect(p, cel.shrink2(vec2(1.0, 0.0)), 1.0, crate::compat::stroke(1.0, accent()));
+                        compat::stroke_rect(p, cel.shrink2(vec2(1.0, 0.0)), 1.0, crate::compat::stroke(1.0, PLAYHEAD()));
                     }
                     // the cel dot: filled when the frame has its own drawing, ring otherwise
                     let dot = pos2(cel.min.x + 12.0, cel.min.y + 13.0);

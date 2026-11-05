@@ -61,6 +61,18 @@ pub fn support_report() -> String {
     )
 }
 
+/// Shows a folder in the system file manager.
+pub fn open_in_file_manager(dir: &std::path::Path) -> Result<(), String> {
+    let prog = if cfg!(target_os = "windows") {
+        "explorer"
+    } else if cfg!(target_os = "macos") {
+        "open"
+    } else {
+        "xdg-open"
+    };
+    std::process::Command::new(prog).arg(dir).spawn().map(|_| ()).map_err(|e| format!("Could not open {}: {e}", dir.display()))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

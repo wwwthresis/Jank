@@ -63,6 +63,8 @@ fn view_key(ed: &psxcore::editor::Editor, w: u32, h: u32, cap: Option<psxcore::l
     mix(ed.tick as u64);
     mix(ed.playing as u64 | (ed.through_camera as u64) << 1 | (ed.dirty as u64) << 2 | (ed.onion as u64) << 3);
     mix(ed.selected_object.map_or(u64::MAX, |v| v as u64));
+    mix(ed.selected_light.map_or(u64::MAX, |v| v as u64));
+    mix(ed.project.scene.lights.len() as u64);
     mix(ed.project.scene.objects.len() as u64);
     mix(cap.map_or(0, |c| 1 + c.mode as u64 * 16 + c.quality as u64));
     let cam = ed.active_camera();
@@ -198,9 +200,10 @@ impl App {
         self.rend.threads = if self.settings.render_threads == 0 { psxcore::raster::default_threads() } else { self.settings.render_threads as usize };
         // the editing view may draw cheaper shadows than the final render (Settings → Viewport)
         self.rend.shadow_cap = viewport_shadow_cap(self.settings.viewport_shadows);
+        self.rend.effects_cap = Some(self.settings.viewport_effects.cap());
         // lazy redraw: skip the software render when neither the input nor the view changed
         // (hovering panels, tooltips and UI animations then cost almost nothing)
-        let key = view_key(&self.ed, w, h, self.rend.shadow_cap);
+        let key = view_key(&self.ed, w, h, self.rend.shadow_cap) ^ (self.settings.viewport_effects as u64) << 60;
         if scene_input(&ctx) {
             self.vp.settle = 2;
         }
@@ -260,6 +263,7 @@ impl App {
 
         let painter = ui.painter().with_clip_rect(rect);
         painter.rect_filled(rect, compat::cr(0.0), VIEWPORT());
+        self.art.paint(&painter, crate::themeart::Slot::Viewport, rect);
         // the picture fills the whole widget: `sc` is how many screen points one drawn pixel covers
         let img = rect;
         let sc = rect.width() / w as f32;
@@ -286,6 +290,7 @@ impl App {
         self.vp_input(&ctx, &resp, img, sc, w, h);
         self.vp_overlays(&painter, img, sc, w, h);
         self.edit_overlays(&painter, img, sc);
+        self.lamp_markers(&painter, img, sc, w, h);
         self.gizmo_draw(&painter, img, sc, w, h);
         self.gizmo_bar(&ctx, img);
         self.preview_ui(&ctx, img);
@@ -394,6 +399,11 @@ impl App {
         match self.ed.mode {
             Mode::Model => match self.model_tool {
                 ModelTool::Select => {
+                    // lamp markers are drawn over everything, so they are picked first
+                    if let Some(l) = self.ed.light_pick(x as f32 + 0.5, y as f32 + 0.5, w, h, (12.0 / sc).max(3.0)) {
+                        self.ed.select_light(Some(l));
+                        return;
+                    }
                     // empty background: a reference picture may be under the mouse
                     if self.ed.pick_info(self.rend.frame.hit_at(x, y)).is_none() {
                         if let Some(i) = self.ed.ref_pick(x as f32 + 0.5, y as f32 + 0.5, w, h) {
@@ -605,6 +615,10 @@ impl App {
     fn welcome(&mut self, ctx: &egui::Context) {
         egui::Window::new("Welcome to Jank!").collapsible(false).resizable(false).default_pos(compat::centered_pos(ctx, vec2(380.0, 160.0))).show(ctx, |ui| {
             ui.set_min_width(360.0);
+            if self.art.has(crate::themeart::Slot::Welcome) {
+                let (r, _) = ui.allocate_exact_size(vec2(ui.available_width(), 120.0), egui::Sense::hover());
+                self.art.paint(&ui.painter().with_clip_rect(r), crate::themeart::Slot::Welcome, r);
+            }
             widgets::dim(ui, "Import a model or start from a primitive, then paint right on it.");
             ui.add_space(6.0);
             ui.horizontal_wrapped(|ui| {

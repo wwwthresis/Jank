@@ -486,7 +486,7 @@ impl App {
                 ui.add_space(30.0);
                 ui.vertical(|ui| {
                     ui.label(egui::RichText::new(format!("Jank! {}", crate::appinfo::version_string())).size(16.0).strong());
-                    dim(ui, "Modelling, painting and animation got much deeper. Click a heading to try it.");
+                    dim(ui, "Lamps, modern effects, themes with pictures and new mesh tools. Click a heading to try it.");
                 });
             });
             ui.add_space(6.0);
@@ -550,8 +550,28 @@ impl App {
         let dir = psxcore::themes::themes_dir();
         let (t, problems) = psxcore::themes::load_all(dir.as_deref());
         self.themes = t;
-        if let Some(p) = problems.first() {
+        self.theme_problems = problems;
+        if let Some(p) = self.theme_problems.first() {
             self.error(format!("Theme file problem: {p}"));
+        }
+    }
+
+    /// Writes the example themes (with their pictures) into the theme folder.
+    fn install_example_themes(&mut self) {
+        let Some(dir) = psxcore::themes::themes_dir() else {
+            self.error("No settings folder on this system");
+            return;
+        };
+        match psxcore::themes::install_examples(&dir) {
+            Ok(names) => {
+                self.reload_themes();
+                if let Some(first) = names.first() {
+                    self.settings.theme = first.clone();
+                    self.touch_settings();
+                }
+                self.info(format!("Installed {} example themes into {}", names.len(), dir.display()));
+            }
+            Err(e) => self.error(e),
         }
     }
 
@@ -565,7 +585,7 @@ impl App {
                     let p = ui.painter();
                     let c = |i: usize| Color32::from_rgb(t.colors[i][0], t.colors[i][1], t.colors[i][2]);
                     let on = self.settings.theme == t.id();
-                    p.rect_filled(rect, compat::cr(RADIUS + 1.0), c(0));
+                    p.rect_filled(rect, compat::cr(RADIUS() + 1.0), c(0));
                     let panel = Rect::from_min_size(rect.min + vec2(6.0, 6.0), vec2(34.0, 34.0));
                     p.rect_filled(panel, compat::cr(2.0), c(1));
                     p.rect_filled(Rect::from_min_size(rect.min + vec2(46.0, 8.0), vec2(58.0, 12.0)), compat::cr(2.0), c(2));
@@ -575,7 +595,7 @@ impl App {
                         p.circle_filled(rect.min + vec2(84.0 + k as f32 * 8.0, 32.0), 3.0, c(*i));
                     }
                     compat::text(p, pos2(rect.min.x + 6.0, rect.max.y - 6.0), Align2::LEFT_BOTTOM, &t.name, 11.5, c(6));
-                    compat::stroke_rect(p, rect, RADIUS + 1.0, compat::stroke(if on { 2.0 } else { 1.0 }, if on { accent() } else if resp.hovered() { c(7) } else { c(4) }));
+                    compat::stroke_rect(p, rect, RADIUS() + 1.0, compat::stroke(if on { 2.0 } else { 1.0 }, if on { accent() } else if resp.hovered() { c(7) } else { c(4) }));
                     let tip = match &t.path {
                         Some(path) => format!("{} — {}", t.name, path.display()),
                         None => format!("{} (built in)", t.name),
@@ -594,13 +614,13 @@ impl App {
                     self.reload_themes();
                     self.info(format!("{} themes", self.themes.len()));
                 }
-                if Btn::new("Save a copy to edit").icon(Icon::Save).tip("Writes the current theme as a .theme file into the theme folder").show(ui).clicked() {
+                if Btn::new("Save a copy to edit").icon(Icon::Save).tip("Writes the current theme as a .theme file with every key explained into the theme folder; edit it in any text editor and Jank picks the change up while it runs").show(ui).clicked() {
                     let mut t = self.current_theme().clone();
                     if t.path.is_none() {
                         t.name = format!("{} custom", t.name);
                     }
                     match psxcore::themes::themes_dir() {
-                        Some(dir) => match psxcore::themes::save(&t, &dir) {
+                        Some(dir) => match psxcore::themes::save_template(&t, &dir) {
                             Ok(p) => {
                                 self.settings.theme = t.id();
                                 self.touch_settings();
@@ -613,8 +633,32 @@ impl App {
                     }
                 }
             });
+            ui.horizontal_wrapped(|ui| {
+                if Btn::new("Open theme folder").icon(Icon::Folder).tip("Show the theme folder in the file manager").show(ui).clicked() {
+                    if let Some(d) = psxcore::themes::themes_dir() {
+                        let _ = std::fs::create_dir_all(&d);
+                        if let Err(e) = crate::appinfo::open_in_file_manager(&d) {
+                            self.error(e);
+                        }
+                    }
+                }
+                if Btn::new("Install example themes").icon(Icon::Sparkle).tip("Adds example themes with pictures (a background behind see-through panels, a picture in the title bar) to start your own from").show(ui).clicked() {
+                    self.install_example_themes();
+                }
+            });
             if let Some(d) = psxcore::themes::themes_dir() {
                 dim(ui, &format!("Theme folder: {}", d.display()));
+            }
+            let t = self.current_theme();
+            let pics = t.images.iter().filter(|i| i.is_some()).count();
+            if pics > 0 || t.extra.iter().any(|e| e.is_some()) {
+                let parts = t.extra.iter().filter(|e| e.is_some()).count();
+                let n = |k: usize, one: &str, many: &str| format!("{k} {}", if k == 1 { one } else { many });
+                dim(ui, &format!("This theme sets {} and {}.", n(parts, "part colour", "part colours"), n(pics, "picture", "pictures")));
+            }
+            let problems: Vec<String> = self.theme_problems.iter().chain(self.art.problems.iter()).take(6).cloned().collect();
+            for p in problems {
+                ui.label(egui::RichText::new(format!("⚠ {p}")).size(11.5).color(WARN()));
             }
             if self.current_theme().accent.is_some() {
                 dim(ui, "This theme brings its own accent colour (it replaces the accent below).");
@@ -981,6 +1025,12 @@ fn ease_editor(ui: &mut Ui, e: &mut Ease, size: f32) -> bool {
 
 /// Lines of the "What's new" window: icon, title, text, command to try it.
 const WHATS_NEW: &[(Icon, &str, &str, Option<CommandId>)] = &[
+    (Icon::Lamp, "Lamps", "Light the scene with candles, lanterns, neon, campfires, torches, fireflies and spotlights: Scene tab \u{2192} Lamps \u{2192} Add lamp. Each lamp has colour, brightness, reach, flicker and a halo, and can hang on an object to follow it in animation.", None),
+    (Icon::Sparkle, "Modern effects and style presets", "Look \u{2192} Modern effects adds pixel lamps, a soft or filmic tone curve, bloom, contact shadows, lamp halos and a CRT screen on top of the retro picture. Presets like Night Glow, Horror Fog or CRT Arcade set everything in one click.", None),
+    (Icon::Sparkle, "New demo: a shrine at night", "Stone and paper lanterns, candles, a glowing vending machine, a moonbeam and fireflies, about 25 lamps. Open demo/night-shrine.jank with File \u{2192} Open project.", Some(CommandId::OpenProject)),
+    (Icon::Spin, "New mesh tools", "In Edit mode: Spin a profile into a vase or a column, Solidify faces, Array copies, Poke faces, To sphere (Alt+Shift+S), Extrude each face (Alt+E) and along normals. They are in the Shape section on the left and in the Mesh menu.", Some(CommandId::EditModeToggle)),
+    (Icon::Palette, "Themes with pictures", "A theme can now colour every part of the window, change corner radii, shadows and spacing, and show pictures behind see-through panels or in the title bar. New theme Neon Night; Settings \u{2192} Appearance \u{2192} Install example themes adds Shrine Night and Blueprint. Edited theme files update while Jank runs.", Some(CommandId::OpenSettings)),
+    (Icon::WinMax, "Own title bar", "The title bar is merged with the menu: drag it to move the window, double-click to maximise. Prefer the system one? Settings \u{2192} Interface \u{2192} Use the system title bar (after a restart).", None),
     (Icon::Sparkle, "New demo project: two plush bunnies", "Two real plush toys rebuilt from photos: photo textures, bones in ears, paws and feet, lamp light with soft shadows and an idle animation on a pink rug. Open demo/bunnies.jank with File \u{2192} Open project, like the butterfly.", Some(CommandId::OpenProject)),
     (Icon::Palette, "True colours in the viewport", "The viewport and the preview window showed every picture a little too pale. They now match the exported render exactly, on every graphics card. The Discord switches in Settings work again too.", None),
     (Icon::Vertex, "Faster Edit mode on heavy meshes", "On a 20 000-vertex mesh drawing the vertices, edges and faces, moving, extruding, selecting and undo are 2 to 5 times faster, so editing stays smooth.", Some(CommandId::EditModeToggle)),

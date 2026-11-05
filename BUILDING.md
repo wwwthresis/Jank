@@ -75,6 +75,26 @@ cargo run --release --example make_bunny_demo -- /tmp/bunnies ../demo/bunnies.ja
 
 The Python script cuts each toy out of its photo, inflates the outline into a stuffed shape, bakes the front and back textures, and places bones and skin weights; the Rust example adds the rug, the floor, the lamp light, shadows and the idle animation. `core/tests/bunny_demo.rs` checks the shipped file (skeletons, weights, closed surfaces, the animation loop, a save and reopen).
 
+## Rebuilding the night shrine demo
+
+`demo/night-shrine.jank` is made entirely in code, with the Edit-mode tools a user has (spin, solidify, array, poke):
+
+```
+cd core
+cargo run --release --example make_shrine_demo -- ../demo/night-shrine.jank [preview.png] [theme-picture.png]
+```
+
+The optional third file is the picture of the *Shrine Night* example theme (`core/assets/themes/shrine-night.png`; reduce it to 128 colours before committing, for example `convert bg.png -dither None -colors 128 PNG8:core/assets/themes/shrine-night.png`). `core/tests/shrine_demo.rs` checks the shipped file (buildings, lamps attached to their lanterns and candles, the moonbeam, the Night Glow look, warm lamp light in a render, a save and reopen).
+
+## Measuring render speed
+
+```
+cd core
+cargo run --release --example bench_effects -- [threads] [project.jank]   # e.g. ../demo/night-shrine.jank; default: a test scene with four lanterns
+```
+
+It renders at 1280×720 the plain retro picture, each modern effect on its own (pixel lamps, tone curve, contact shadows, bloom, CRT) and the full *Night Glow* look, and prints the average milliseconds of a frame. `bench_render` times the plain renderer.
+
 ## Measuring Edit-mode speed
 
 ```
@@ -86,7 +106,7 @@ It prints the time of what happens every frame in Edit mode (overlay, hover) and
 
 ## Making a release
 
-1. Raise `app/BUILD_NUMBER` and add the entry `## <version> (build <N>)` at the top of `CHANGELOG.md` (for example `## 0.2.0-alpha (build 31035)`); the release notes are taken from it.
+1. Raise `app/BUILD_NUMBER` and add the entry `## <version> (build <N>)` at the top of `CHANGELOG.md` (for example `## 0.2.0-alpha (build 31036)`); the release notes are taken from it.
 2. Commit and push, then tag and push the tag:
 
    ```

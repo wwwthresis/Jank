@@ -25,11 +25,12 @@ impl Default for TexView {
 
 impl App {
     pub fn texture_panel(&mut self, ctx: &Context) {
-        let mut panel = SidePanel::left("tex2d").resizable(true).default_width(self.settings.layout.texture_width).width_range(300.0..=900.0).frame(compat::frame(BG1(), 10.0));
+        let mut panel = SidePanel::left("tex2d").resizable(true).default_width(self.settings.layout.texture_width).width_range(300.0..=900.0).frame(compat::frame(panel_fill(PANEL()), 10.0));
         if self.layout_reset {
             panel = panel.exact_width(self.settings.layout.texture_width);
         }
         let shown = panel.show(ctx, |ui| {
+            self.art.paint_panel(ui, crate::themeart::Slot::Panel, vec2(10.0, 10.0));
             let Some(canvas) = self.current_canvas() else {
                 widgets::dim(ui, "Select an object to edit its texture, or make a picture layer to draw a plain image or a backdrop.");
                 ui.add_space(6.0);

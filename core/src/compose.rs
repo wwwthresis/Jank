@@ -58,6 +58,8 @@ pub struct FrameSpec<'a> {
     pub hand_only: bool,
     /// Draw the scene layers (pictures behind and in front of the 3D objects). Off for a clean 3D reference.
     pub scene_layers: bool,
+    /// Time in seconds (for flickering lamps).
+    pub time: f32,
 }
 
 /// Base render: draws the object states into `r.frame`.
@@ -100,6 +102,20 @@ pub fn render_states(project: &Project, spec: &FrameSpec, r: &mut Renderer) {
         let casters: Vec<crate::shadow::Caster> = owned.iter().map(|o| crate::shadow::Caster { model: &o.asset.model, pos: &o.pos, world: o.world }).collect();
         crate::shadow::ShadowMap::build_cached(&casters, style.light_dir, mode == crate::lighting::ShadowMode::Blob, quality, lit.softness).map(|map| crate::shadow::ShadowInput { map, strength: lit.shadow_strength })
     };
+    // lamps: attached ones follow their object as it stands in this frame
+    r.lights = if spec.hand_only || project.scene.lights.is_empty() {
+        Vec::new()
+    } else {
+        let world_of = |id: u32| -> Option<Mat4> {
+            let obj = project.scene.object(id).filter(|o| o.visible)?;
+            match spec.states.iter().find(|s| s.object == id) {
+                Some(st) if st.visible => Some(st.transform.matrix()),
+                Some(_) => None,
+                None => Some(obj.transform.matrix()),
+            }
+        };
+        crate::lights::resolve(&project.scene.lights, &world_of, spec.time)
+    };
     let insts: Vec<Instance> = owned.iter().map(|o| Instance { model: &o.asset.model, pos: &o.pos, nrm: &o.nrm, world: o.world, textures: &o.tex, id: o.id, tint: o.tint }).collect();
     // scene layers: pictures behind and in front of the 3D objects
     fn mk(l: &crate::layers::Layer) -> Plane<'_> {
@@ -120,7 +136,8 @@ pub fn render_states(project: &Project, spec: &FrameSpec, r: &mut Renderer) {
 pub fn render_frame_index(project: &Project, anim: &Animation, frame: usize, r: &mut Renderer) -> bool {
     let Some(f) = anim.frames.get(frame) else { return false };
     let style = f.style.as_ref().unwrap_or(&project.scene.style);
-    render_states(project, &FrameSpec { states: &f.states, camera: f.camera, style, hand_layer: f.hand_layer.as_ref(), hand_only: f.hand_only, scene_layers: true }, r);
+    let time = anim.frame_start(frame) as f32 / anim.fps().max(1e-3);
+    render_states(project, &FrameSpec { states: &f.states, camera: f.camera, style, hand_layer: f.hand_layer.as_ref(), hand_only: f.hand_only, scene_layers: true, time }, r);
     true
 }
 
@@ -129,7 +146,8 @@ pub fn render_tick(project: &Project, anim: &Animation, tick: u32, r: &mut Rende
     let Some(ev) = anim.eval(tick) else { return false };
     let f = &anim.frames[ev.frame_index];
     let style = f.style.as_ref().unwrap_or(&project.scene.style);
-    render_states(project, &FrameSpec { states: &ev.states, camera: ev.camera, style, hand_layer: f.hand_layer.as_ref(), hand_only: f.hand_only, scene_layers: true }, r);
+    let time = tick as f32 / anim.fps().max(1e-3);
+    render_states(project, &FrameSpec { states: &ev.states, camera: ev.camera, style, hand_layer: f.hand_layer.as_ref(), hand_only: f.hand_only, scene_layers: true, time }, r);
     true
 }
 
@@ -156,9 +174,73 @@ mod tests {
     fn renders_scene_objects() {
         let p = project();
         let mut r = Renderer::new(64, 64);
-        render_states(&p, &FrameSpec { states: &scene_states(&p), camera: p.scene.camera, style: &p.scene.style, hand_layer: None, hand_only: false, scene_layers: true }, &mut r);
+        render_states(&p, &FrameSpec { states: &scene_states(&p), camera: p.scene.camera, style: &p.scene.style, hand_layer: None, hand_only: false, scene_layers: true, time: 0.0 }, &mut r);
         assert!(r.frame.any_hit(), "the cube must be visible");
     }
+    fn lamp_scene(style: PsxStyle) -> Project {
+        let mut p = Project::new("lamps");
+        let floor = model_from_mesh("floor", plane(6.0, 6.0, 6, 6), 16);
+        p.place_model(floor);
+        let id = p.place_model(model_from_mesh("box", cube(Vec3::new(0.6, 0.6, 0.6)), 16));
+        p.scene.object_mut(id).unwrap().transform.pos = Vec3::new(0.6, 0.3, 0.0);
+        p.scene.style = PsxStyle { width: 96, height: 64, ambient: [0.1, 0.1, 0.1], light_color: [0.1, 0.1, 0.1], fog_on: false, ..style };
+        p.scene.camera = Camera { eye: Vec3::new(0.0, 3.0, 4.0), target: Vec3::ZERO, ..Default::default() };
+        p
+    }
+    fn picture(p: &Project, threads: usize) -> Vec<[u8; 4]> {
+        let mut r = Renderer::new(1, 1);
+        r.threads = threads;
+        render_states(p, &FrameSpec { states: &scene_states(p), camera: p.scene.camera, style: &p.scene.style, hand_layer: None, hand_only: false, scene_layers: true, time: 0.5 }, &mut r);
+        r.frame.color.clone()
+    }
+    fn brightness(px: &[[u8; 4]]) -> u64 {
+        px.iter().map(|c| c[0] as u64 + c[1] as u64 + c[2] as u64).sum()
+    }
+    #[test]
+    fn lamps_light_the_scene_per_vertex_and_per_pixel() {
+        for pixel in [false, true] {
+            let mut p = lamp_scene(PsxStyle { pixel_lights: pixel, ..PsxStyle::ps1_classic() });
+            let dark = brightness(&picture(&p, 1));
+            let l = p.scene.add_light(crate::lights::LightPreset::Bulb);
+            p.scene.light_mut(l).unwrap().pos = Vec3::new(-0.5, 0.8, 0.5);
+            let lit = brightness(&picture(&p, 1));
+            assert!(lit > dark + dark / 5, "pixel={pixel}: a lamp brightens the floor ({dark} -> {lit})");
+            p.scene.light_mut(l).unwrap().enabled = false;
+            assert_eq!(brightness(&picture(&p, 1)), dark, "a switched-off lamp changes nothing");
+            p.scene.light_mut(l).unwrap().enabled = true;
+            p.scene.light_mut(l).unwrap().pos = Vec3::new(40.0, 0.5, 0.0);
+            assert_eq!(picture(&p, 1), picture(&lamp_scene(PsxStyle { pixel_lights: pixel, ..PsxStyle::ps1_classic() }), 1), "a lamp out of reach is culled and changes nothing");
+        }
+    }
+    #[test]
+    fn modern_effects_are_the_same_on_any_number_of_threads() {
+        let mut p = lamp_scene(PsxStyle { width: 200, height: 160, crt_curve: 0.4, crt_mask: 0.3, chroma: 0.4, ..PsxStyle::night_glow() });
+        p.scene.style.width = 200;
+        p.scene.style.height = 160;
+        for (i, preset) in [crate::lights::LightPreset::Lantern, crate::lights::LightPreset::Spotlight, crate::lights::LightPreset::Neon].into_iter().enumerate() {
+            let l = p.scene.add_light(preset);
+            p.scene.light_mut(l).unwrap().pos = Vec3::new(i as f32 - 1.0, 0.7, 0.4);
+        }
+        let one = picture(&p, 1);
+        assert_ne!(brightness(&one), 0);
+        for t in [2, 3, 5] {
+            assert!(picture(&p, t) == one, "{t} threads give the same picture");
+        }
+    }
+    #[test]
+    fn attached_lamp_follows_its_object() {
+        let mut p = lamp_scene(PsxStyle { pixel_lights: true, ..PsxStyle::ps1_classic() });
+        let obj = p.scene.objects[1].id;
+        let l = p.scene.add_light(crate::lights::LightPreset::Bulb);
+        p.scene.light_mut(l).unwrap().pos = Vec3::new(0.0, 0.8, 0.0);
+        p.scene.light_mut(l).unwrap().attach = Some(obj);
+        let a = picture(&p, 1);
+        p.scene.object_mut(obj).unwrap().transform.pos = Vec3::new(-1.5, 0.3, 0.0);
+        assert_ne!(picture(&p, 1), a, "moving the object moves its lamp");
+        p.scene.remove_object(obj);
+        assert!(p.scene.light(l).unwrap().attach.is_none(), "deleting the object keeps the lamp, now free");
+    }
+
     #[test]
     fn emotion_swaps_texture_and_patch_overrides_it() {
         let mut p = project();
@@ -210,7 +292,7 @@ mod tests {
         use crate::layers::Layer;
         let mut p = project();
         fn draw(p: &Project, r: &mut Renderer) {
-            render_states(p, &FrameSpec { states: &scene_states(p), camera: p.scene.camera, style: &p.scene.style, hand_layer: None, hand_only: false, scene_layers: true }, r);
+            render_states(p, &FrameSpec { states: &scene_states(p), camera: p.scene.camera, style: &p.scene.style, hand_layer: None, hand_only: false, scene_layers: true, time: 0.0 }, r);
         }
         let mut plain = Renderer::new(64, 64);
         draw(&p, &mut plain);
@@ -261,7 +343,7 @@ mod tests {
         p.scene.camera = Camera { eye: Vec3::new(0.0, 7.0, 8.0), target: Vec3::new(1.0, 0.0, 0.0), ..Default::default() };
         let draw = |p: &Project| {
             let mut r = Renderer::new(128, 128);
-            render_states(p, &FrameSpec { states: &scene_states(p), camera: p.scene.camera, style: &p.scene.style, hand_layer: None, hand_only: false, scene_layers: true }, &mut r);
+            render_states(p, &FrameSpec { states: &scene_states(p), camera: p.scene.camera, style: &p.scene.style, hand_layer: None, hand_only: false, scene_layers: true, time: 0.0 }, &mut r);
             r
         };
         let plain = draw(&p);

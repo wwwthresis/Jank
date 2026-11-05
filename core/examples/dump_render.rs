@@ -21,7 +21,7 @@ fn main() {
             p.scene.style = PsxStyle { width: w, height: h, ..style.clone() };
             let states = scene_states(&p);
             let mut r = Renderer::new(w, h);
-            render_states(&p, &FrameSpec { states: &states, camera: p.scene.camera, style: &p.scene.style, hand_layer: None, hand_only: false, scene_layers: true }, &mut r);
+            render_states(&p, &FrameSpec { states: &states, camera: p.scene.camera, style: &p.scene.style, hand_layer: None, hand_only: false, scene_layers: true, time: 0.0 }, &mut r);
             let bytes: Vec<u8> = r.frame.color.iter().flat_map(|c| *c).collect();
             std::fs::write(format!("{dir}/{name}_{w}x{h}.rgba"), bytes).unwrap();
         }

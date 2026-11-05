@@ -867,6 +867,65 @@ impl Editor {
         self.edit_commit(false);
         self.begin_drag_in_group(MeshDragKind::Move, mouse, w, h, if dir.length() > 1e-6 { Some(dir.normalized()) } else { None })
     }
+    /// Alt+E: extrudes every selected face on its own and pushes them along their own normals
+    /// (`individual`), or extrudes them as one piece and pushes every vertex along its normal.
+    pub fn edit_extrude_faces_begin(&mut self, individual: bool, mouse: (f32, f32), w: u32, h: u32) -> bool {
+        let Some(asset) = self.edit.as_ref().map(|s| s.asset) else { return false };
+        if self.edit.as_ref().unwrap().mesh.sel_f.is_empty() {
+            self.status = "Select faces to extrude them along their normals".into();
+            return false;
+        }
+        self.end_group();
+        self.begin_group();
+        self.record(Slot::Mesh(asset));
+        let m = &mut self.edit.as_mut().unwrap().mesh;
+        if individual {
+            m.extrude_individual();
+        } else {
+            m.extrude();
+        }
+        self.edit_commit(false);
+        self.begin_drag_in_group(MeshDragKind::ShrinkFatten, mouse, w, h, None)
+    }
+    /// Spin (lathe) of the selection around an axis of the object (`axis` 0..=2) or the view
+    /// direction (`axis` 3), through the object's centre or the selection's centre.
+    pub fn edit_spin(&mut self, angle_deg: f32, steps: usize, axis: usize, around_selection: bool) -> usize {
+        let Some((_, inv)) = self.edit_world() else { return 0 };
+        let dir = match axis {
+            0 => Vec3::new(1.0, 0.0, 0.0),
+            1 => Vec3::Y,
+            2 => Vec3::new(0.0, 0.0, 1.0),
+            _ => {
+                let cam = self.active_camera();
+                inv.transform_dir(cam.target - cam.eye).normalized()
+            }
+        };
+        let Some(s) = self.edit.as_ref() else { return 0 };
+        if !s.mesh.any_selected() {
+            self.status = "Spin: select a profile (edges) or faces first".into();
+            return 0;
+        }
+        let center = if around_selection { s.mesh.selection_center().unwrap_or(Vec3::ZERO) } else { Vec3::ZERO };
+        let n = self.edit_op(|m| m.spin(center, dir, angle_deg, steps)).unwrap_or(0);
+        if n == 0 {
+            self.status = "Spin: nothing to sweep (select edges or faces)".into();
+        }
+        n
+    }
+    /// Array of the selection along an axis of the object: copies `factor` sizes apart (1 = touching).
+    pub fn edit_array(&mut self, count: usize, axis: usize, factor: f32, weld: bool) -> usize {
+        let Some(s) = self.edit.as_ref() else { return 0 };
+        let size = s.mesh.selection_size();
+        let along = [size.x, size.y, size.z][axis.min(2)];
+        let step = if along > 1e-6 { along * factor } else { factor };
+        let mut off = Vec3::ZERO;
+        match axis.min(2) {
+            0 => off.x = step,
+            1 => off.y = step,
+            _ => off.z = step,
+        }
+        self.edit_op(|m| m.array(count, off, weld)).unwrap_or(0)
+    }
     /// Shift+D: duplicates the selection and moves the copy.
     pub fn edit_duplicate_begin(&mut self, mouse: (f32, f32), w: u32, h: u32) -> bool {
         let Some(asset) = self.edit.as_ref().map(|s| s.asset) else { return false };

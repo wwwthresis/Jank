@@ -9,7 +9,8 @@
 //!   it in Settings → Appearance; it is read at paint time, so a change applies immediately.
 //! * `WARN` and `DANGER` are used only for warnings and destructive actions.
 //! * `AXIS_X/Y/Z` are used only for the three coordinate axes (gizmos and XYZ fields).
-//! * Corners are lightly rounded (`RADIUS`); there are no glows or gradients.
+//! * Corners are lightly rounded ([`RADIUS`], set by the theme); a theme can also set colours of single window parts,
+//!   sizes and pictures (see `psxcore::themes`).
 
 use crate::compat::cr;
 use eframe::egui::{self, Color32, Context, FontData, FontDefinitions, FontFamily, FontId, TextStyle};
@@ -17,26 +18,12 @@ use psxcore::settings::{Density, TextSize};
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::Arc;
 
-/// The colours of the active theme (see `psxcore::themes`), packed RGB in the order of
-/// `psxcore::themes::KEYS`. Read at paint time, so switching themes applies immediately.
-static PALETTE: [AtomicU32; 16] = [
-    AtomicU32::new(0x131316),
-    AtomicU32::new(0x1b1b1f),
-    AtomicU32::new(0x26262b),
-    AtomicU32::new(0x313137),
-    AtomicU32::new(0x3a3a41),
-    AtomicU32::new(0x27272c),
-    AtomicU32::new(0xdcdce0),
-    AtomicU32::new(0x8b8b94),
-    AtomicU32::new(0x3d3d45),
-    AtomicU32::new(0x0d0d10),
-    AtomicU32::new(0xd6a74a),
-    AtomicU32::new(0xd65f6b),
-    AtomicU32::new(0x131316),
-    AtomicU32::new(0xd06464),
-    AtomicU32::new(0x84b06a),
-    AtomicU32::new(0x6493d2),
-];
+/// The colours of the active theme (see `psxcore::themes`), packed RGB: the 16 base colours in the order of
+/// `psxcore::themes::KEYS`, then the colours of single window parts in the order of `psxcore::themes::EXTRA`.
+/// Read at paint time, so switching themes applies immediately.
+static PALETTE: [AtomicU32; 36] = [const { AtomicU32::new(0) }; 36];
+/// Theme sizes in the order of `psxcore::themes::METRICS`, as `f32` bits.
+static METRIC: [AtomicU32; 11] = [const { AtomicU32::new(0) }; 11];
 static LIGHT: AtomicU32 = AtomicU32::new(0);
 
 fn slot(i: usize) -> Color32 {
@@ -72,6 +59,62 @@ colour! {
     AXIS_X = 13;
     AXIS_Y = 14;
     AXIS_Z = 15;
+    /// Title bar and menu bar.
+    TITLEBAR = 16;
+    TITLEBAR_TEXT = 17;
+    RIBBON = 18;
+    TOOLSTRIP = 19;
+    PANEL = 20;
+    STATUSBAR = 21;
+    STATUSBAR_TEXT = 22;
+    /// Dialogs, menus and pop-ups.
+    WINDOW = 23;
+    WINDOW_BORDER = 24;
+    TOOLTIP = 25;
+    TOOLTIP_TEXT = 26;
+    BUTTON = 27;
+    BUTTON_HOVER = 28;
+    BUTTON_TEXT = 29;
+    INPUT = 30;
+    SELECTION = 31;
+    TIMELINE = 32;
+    TIMELINE_FRAME = 33;
+    PLAYHEAD = 34;
+    LINK = 35;
+}
+
+fn metric(i: usize) -> f32 {
+    f32::from_bits(METRIC[i].load(Ordering::Relaxed))
+}
+/// Corner radius for controls, in points (theme `radius`).
+#[allow(non_snake_case)]
+pub fn RADIUS() -> f32 {
+    metric(0)
+}
+/// Width of control borders (theme `border`).
+pub fn border_width() -> f32 {
+    metric(3)
+}
+/// Opacity of panel fills (theme `panel_opacity`): below 1 the theme's background picture shows through.
+pub fn panel_opacity() -> f32 {
+    metric(7)
+}
+/// Height of the custom title bar (theme `titlebar_height`).
+pub fn titlebar_height() -> f32 {
+    metric(8)
+}
+/// Strength of the pixel bevel on buttons, 0..1 (theme `bevel`).
+pub fn bevel_amount() -> f32 {
+    metric(10)
+}
+/// A panel fill in a theme colour with the theme's panel opacity.
+pub fn panel_fill(c: Color32) -> Color32 {
+    let o = panel_opacity();
+    if o >= 1.0 {
+        c
+    } else {
+        Color32::from_rgba_unmultiplied(c.r(), c.g(), c.b(), (o * 255.0).round() as u8)
+    }
 }
 /// True for light themes (dark text on bright surfaces).
 pub fn is_light() -> bool {
@@ -90,9 +133,6 @@ pub fn BRIGHT() -> Color32 {
 /// Onion-skin ghosts: previous frames are warm, next frames are green (functional colours like the axis colours).
 pub const ONION_PREV: Color32 = Color32::from_rgb(0xd9, 0x7a, 0x5c);
 pub const ONION_NEXT: Color32 = Color32::from_rgb(0x5f, 0xb4, 0x82);
-
-/// Corner radius for controls and windows, in points.
-pub const RADIUS: f32 = 3.0;
 
 /// The accent colour as packed RGB; violet (Obsidian's default) until the settings are applied.
 static ACCENT_RGB: AtomicU32 = AtomicU32::new(0x8a7bf2);
@@ -131,12 +171,20 @@ pub struct Look {
     pub text: TextSize,
     /// Theme colours in the order of `psxcore::themes::KEYS`.
     pub colors: [[u8; 3]; 16],
+    /// Colours of single parts (fallbacks already applied), in the order of `psxcore::themes::EXTRA`.
+    pub extra: [[u8; 3]; 20],
+    /// Sizes in the order of `psxcore::themes::METRICS`.
+    pub metrics: [f32; 11],
     pub light: bool,
+}
+impl Look {
+    pub fn from_theme(t: &psxcore::themes::Theme, accent: [u8; 3], density: Density, text: TextSize) -> Look {
+        Look { accent, density, text, colors: t.colors, extra: t.resolved_extra(accent), metrics: t.metrics, light: t.light }
+    }
 }
 impl Default for Look {
     fn default() -> Self {
-        let t = &psxcore::themes::builtin()[0];
-        Self { accent: [0x8a, 0x7b, 0xf2], density: Density::Compact, text: TextSize::Normal, colors: t.colors, light: false }
+        Look::from_theme(&psxcore::themes::builtin()[0], [0x8a, 0x7b, 0xf2], Density::Compact, TextSize::Normal)
     }
 }
 
@@ -148,9 +196,14 @@ pub fn apply(ctx: &Context) {
 
 /// Applies colours, spacing and text sizes. Cheap enough to call whenever a setting changes.
 pub fn apply_look(ctx: &Context, look: Look) {
-    for (i, c) in look.colors.iter().enumerate() {
+    for (i, c) in look.colors.iter().chain(look.extra.iter()).enumerate() {
         PALETTE[i].store(((c[0] as u32) << 16) | ((c[1] as u32) << 8) | c[2] as u32, Ordering::Relaxed);
     }
+    for (i, m) in look.metrics.iter().enumerate() {
+        METRIC[i].store(m.to_bits(), Ordering::Relaxed);
+    }
+    let m = |k: &str| psxcore::themes::METRICS.iter().position(|x| x.0 == k).map_or(1.0, |i| look.metrics[i]);
+    let (radius, bw, shadow, blur, spacing) = (m("radius"), m("border"), m("shadow"), m("shadow_blur"), m("spacing"));
     LIGHT.store(look.light as u32, Ordering::Relaxed);
     let [r, g, b] = look.accent;
     ACCENT_RGB.store(((r as u32) << 16) | ((g as u32) << 8) | b as u32, Ordering::Relaxed);
@@ -159,43 +212,44 @@ pub fn apply_look(ctx: &Context, look: Look) {
     let body = look.text.points();
     let mut v = if look.light { egui::Visuals::light() } else { egui::Visuals::dark() };
     v.override_text_color = Some(TEXT());
-    v.panel_fill = BG1();
-    v.window_fill = BG1();
-    v.extreme_bg_color = BG0();
+    v.panel_fill = panel_fill(PANEL());
+    v.window_fill = WINDOW();
+    v.extreme_bg_color = INPUT();
     v.faint_bg_color = BG2();
     v.code_bg_color = BG0();
-    v.hyperlink_color = acc;
-    v.window_stroke = crate::compat::stroke(1.0, LINE());
-    v.window_corner_radius = cr(RADIUS + 3.0);
-    v.menu_corner_radius = cr(RADIUS + 1.0);
-    v.window_shadow = egui::Shadow { offset: [0, 6], blur: 18, spread: 0, color: Color32::from_black_alpha(if look.light { 40 } else { 110 }) };
-    v.popup_shadow = egui::Shadow { offset: [0, 3], blur: 10, spread: 0, color: Color32::from_black_alpha(if look.light { 35 } else { 100 }) };
-    v.selection.bg_fill = alpha(acc, 80);
-    v.selection.stroke = crate::compat::stroke(1.0, acc);
+    v.hyperlink_color = LINK();
+    v.window_stroke = crate::compat::stroke(bw.max(0.5), WINDOW_BORDER());
+    v.window_corner_radius = cr(m("window_radius"));
+    v.menu_corner_radius = cr(m("menu_radius"));
+    let sh = |a: f32| Color32::from_black_alpha((a * shadow).clamp(0.0, 255.0) as u8);
+    v.window_shadow = egui::Shadow { offset: [0, 6], blur: blur.round() as u8, spread: 0, color: sh(if look.light { 40.0 } else { 110.0 }) };
+    v.popup_shadow = egui::Shadow { offset: [0, 3], blur: (blur * 0.55).round() as u8, spread: 0, color: sh(if look.light { 35.0 } else { 100.0 }) };
+    v.selection.bg_fill = alpha(SELECTION(), 80);
+    v.selection.stroke = crate::compat::stroke(1.0, SELECTION());
     v.slider_trailing_fill = true;
     v.handle_shape = egui::style::HandleShape::Rect { aspect_ratio: 0.5 };
     v.striped = false;
     v.text_cursor.stroke = crate::compat::stroke(2.0, acc);
-    for (w, fill, stroke) in [
-        (&mut v.widgets.noninteractive, BG1(), LINE_SOFT()),
-        (&mut v.widgets.inactive, BG2(), LINE()),
-        (&mut v.widgets.hovered, BG3(), mix(LINE(), acc, 0.45)),
-        (&mut v.widgets.active, BG3(), acc),
-        (&mut v.widgets.open, BG3(), LINE()),
+    for (w, fill, stroke, text) in [
+        (&mut v.widgets.noninteractive, BG1(), LINE_SOFT(), TEXT()),
+        (&mut v.widgets.inactive, BUTTON(), LINE(), BUTTON_TEXT()),
+        (&mut v.widgets.hovered, BUTTON_HOVER(), mix(LINE(), acc, 0.45), BUTTON_TEXT()),
+        (&mut v.widgets.active, BUTTON_HOVER(), acc, BUTTON_TEXT()),
+        (&mut v.widgets.open, BUTTON_HOVER(), LINE(), BUTTON_TEXT()),
     ] {
         w.bg_fill = fill;
         w.weak_bg_fill = fill;
-        w.corner_radius = cr(RADIUS);
-        w.bg_stroke = crate::compat::stroke(1.0, stroke);
-        w.fg_stroke = crate::compat::stroke(1.0, TEXT());
+        w.corner_radius = cr(radius);
+        w.bg_stroke = crate::compat::stroke(bw, stroke);
+        w.fg_stroke = crate::compat::stroke(1.0, text);
         w.expansion = 0.0;
     }
     ctx.set_visuals(v);
     ctx.style_mut(|s| {
         // UI text must not be selectable or copyable
         s.interaction.selectable_labels = false;
-        s.spacing.item_spacing = if roomy { egui::vec2(8.0, 6.0) } else { egui::vec2(6.0, 4.0) };
-        s.spacing.button_padding = if roomy { egui::vec2(10.0, 5.0) } else { egui::vec2(8.0, 3.0) };
+        s.spacing.item_spacing = if roomy { egui::vec2(8.0, 6.0) } else { egui::vec2(6.0, 4.0) } * spacing;
+        s.spacing.button_padding = if roomy { egui::vec2(10.0, 5.0) } else { egui::vec2(8.0, 3.0) } * spacing;
         s.spacing.slider_width = 120.0;
         s.spacing.interact_size = if roomy { egui::vec2(28.0, 26.0) } else { egui::vec2(26.0, 22.0) };
         s.spacing.menu_margin = egui::Margin::same(5);
@@ -203,7 +257,7 @@ pub fn apply_look(ctx: &Context, look: Look) {
         s.spacing.tooltip_width = 320.0;
         // thin, always-visible scrollbars that take their own space instead of floating over content
         s.spacing.scroll = egui::style::ScrollStyle::solid();
-        s.spacing.scroll.bar_width = 8.0;
+        s.spacing.scroll.bar_width = m("scrollbar_width");
         s.spacing.scroll.handle_min_length = 24.0;
         s.animation_time = 0.08;
         s.text_styles.insert(TextStyle::Body, FontId::proportional(body));

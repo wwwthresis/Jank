@@ -235,6 +235,8 @@ impl App {
                     self.ed.edit_delete_selected();
                 } else if !self.ed.selected_faces.is_empty() {
                     self.ed.delete_selected_faces();
+                } else if let Some(l) = self.ed.selected_light {
+                    self.ed.delete_light(l);
                 } else if let Some(id) = self.ed.selected_object {
                     self.ed.delete_object(id);
                 } else {
@@ -246,6 +248,8 @@ impl App {
                 let frames = self.ed.animation().map_or(0, |a| a.frames.len());
                 if self.hover_timeline && frames > 1 {
                     self.ed.delete_frame();
+                } else if let Some(l) = self.ed.selected_light {
+                    self.ed.delete_light(l);
                 } else if let Some(id) = self.ed.selected_object {
                     self.ed.delete_object(id);
                 } else {
@@ -318,8 +322,16 @@ impl App {
     /// Pushes the appearance settings (accent, density, text size) to egui when they changed.
     /// Called after the frame's UI, so a whole frame is always laid out with one set of metrics.
     pub fn sync_look(&mut self, ctx: &Context) {
-        let t = self.current_theme();
-        let look = crate::theme::Look { accent: t.accent.unwrap_or(self.settings.accent.rgb()), density: self.settings.density, text: self.settings.text_size, colors: t.colors, light: t.light };
+        // a theme file (or one of its pictures) edited while Jank runs is picked up within a second
+        let cur = self.current_theme().clone();
+        if self.art.changed_on_disk(&cur) {
+            self.reload_themes();
+            self.info(format!("Theme \"{}\" reloaded", cur.name));
+        }
+        let t = self.current_theme().clone();
+        self.art.sync(ctx, &t);
+        let t = &t;
+        let look = crate::theme::Look::from_theme(t, t.accent.unwrap_or(self.settings.accent.rgb()), self.settings.density, self.settings.text_size);
         if self.hk.look != Some(look) {
             crate::theme::apply_look(ctx, look);
             self.hk.look = Some(look);
@@ -624,9 +636,9 @@ impl App {
                     let (rect, resp) = ui.allocate_exact_size(vec2(30.0, 30.0), egui::Sense::click());
                     let p = ui.painter();
                     let on = self.settings.accent == *a;
-                    p.rect_filled(rect.shrink(4.0), compat::cr(RADIUS + 1.0), Color32::from_rgb(r, g, b));
+                    p.rect_filled(rect.shrink(4.0), compat::cr(RADIUS() + 1.0), Color32::from_rgb(r, g, b));
                     if on || resp.hovered() {
-                        compat::stroke_rect(p, rect.shrink(1.0), RADIUS + 3.0, compat::stroke(if on { 2.0 } else { 1.0 }, if on { BRIGHT() } else { DIM() }));
+                        compat::stroke_rect(p, rect.shrink(1.0), RADIUS() + 3.0, compat::stroke(if on { 2.0 } else { 1.0 }, if on { BRIGHT() } else { DIM() }));
                     }
                     if crate::widgets::with_tip(resp, a.label()).clicked() {
                         self.settings.accent = *a;
@@ -725,6 +737,15 @@ impl App {
                 self.touch_settings();
             }
         });
+        section(ui, "Window", accent(), |ui| {
+            dim(ui, "Jank draws its own title bar merged with the menu: drag it to move the window, double-click to maximise. Turn this on to use the title bar of your system instead (after a restart).");
+            let mut v = self.settings.system_title_bar;
+            if toggle_tip(ui, &mut v, "Use the system title bar", accent(), "Takes effect the next time Jank starts").clicked() {
+                self.settings.system_title_bar = v;
+                self.touch_settings();
+                self.info("The title bar changes after a restart");
+            }
+        });
         section(ui, "Panel layout", WARN(), |ui| {
             dim(ui, "Panel sizes are remembered between sessions. Drag a panel edge to resize it.");
             if Btn::new("Reset panel layout").tip("Return every panel to its original size").show(ui).clicked() {
@@ -755,11 +776,16 @@ impl App {
                 }
             });
         });
-        section(ui, "Viewport shadows", accent(), |ui| {
+        section(ui, "Viewport shadows and effects", accent(), |ui| {
             dim(ui, "Shadows in the editing view only. Lower settings keep the view smooth on slow computers; the final render, the export and the preview window always use the scene's own shadows.");
             let mut v = self.settings.viewport_shadows;
             if self.choice_row(ui, &mut v, "Shadow quality of the editing view") {
                 self.settings.viewport_shadows = v;
+            }
+            dim(ui, "Modern effects of the style (pixel lamps, contact shadows, bloom, CRT) in the editing view. Light keeps lamps per vertex and drops contact shadows and bloom; Off shows the plain retro picture. Renders always use the full style.");
+            let mut v = self.settings.viewport_effects;
+            if self.choice_row(ui, &mut v, "Modern effects in the editing view") {
+                self.settings.viewport_effects = v;
             }
             let mut v = self.settings.lazy_redraw;
             if toggle_tip(ui, &mut v, "Redraw the view only when something changes", accent(), "Saves processor time while you hover panels or read tooltips. Turn off to draw every frame").clicked() {

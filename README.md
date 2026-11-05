@@ -8,13 +8,17 @@ Model it. Paint it. Pose it. Animate it. Render it. All in one small program.
 `0.2.0-alpha` · Linux · Written in Rust · No external tools needed
 </div>
 
-![Jank! with the bunny demo project](docs/img/bunnies.webp)
+![Jank! with the night shrine demo: about 25 lamps in the Night Glow style](docs/img/shrine.webp)
 
-| Edit mode: vertices, edges and polygons | Radial menu on `Space` |
+| Lamps: candles, lanterns, neon, fireflies, spotlights | Themes with pictures (here: Shrine Night) |
 |---|---|
-| ![Edit mode](docs/img/edit.webp) | ![Radial menu](docs/img/radial.webp) |
-| **Curves: keys and easing of the animation** | **Discord status with a live preview** |
-| ![Curves](docs/img/curves.webp) | ![Discord settings](docs/img/discord.webp) |
+| ![Lamps](docs/img/lamps.webp) | ![Shrine Night theme](docs/img/theme-shrine.webp) |
+| **Modern effects and style presets** | **Mesh tools: Spin, Solidify, Array, Poke** |
+| ![Look tab with modern effects](docs/img/effects.webp) | ![Shape tools in Edit mode](docs/img/shape.webp) |
+| **The bunny demo: made from photos, rigged** | **Edit mode: vertices, edges and polygons** |
+| ![The bunny demo](docs/img/bunnies.webp) | ![Edit mode](docs/img/edit.webp) |
+| **Radial menu on `Space`** | **Curves: keys and easing of the animation** |
+| ![Radial menu](docs/img/radial.webp) | ![Curves](docs/img/curves.webp) |
 | **Render mode with soft shadows** | **Texture painting** |
 | ![Render mode](docs/img/render.webp) | ![Texture mode](docs/img/texture.webp) |
 
@@ -32,7 +36,7 @@ It is a single program where you can:
 | **Texture** | Paint pixels straight onto the model. Palettes, layers, dithering, a live preview. | `Texture` mode (key `2`) |
 | **Pose** | Bend the skeleton of an imported model into a pose, bone by bone or by dragging the end of a chain. | `Pose` mode (key `3`) |
 | **Animate** | Make frame-by-frame animation, like a flip-book. | `Animate` mode (key `4`) |
-| **Render** | Get the retro look (wobbly vertices, 15-bit colour, dithering, fog) and save a picture or a video. | `Render` mode (key `5`) |
+| **Render** | Get the retro look (wobbly vertices, 15-bit colour, dithering, fog), light it with lamps, add modern touches like bloom if you want, and save a picture or a video. | `Render` mode (key `5`) |
 
 You do not need to know any 3D software first. Everything has a tooltip: hold the mouse over anything and it tells you what it does.
 
@@ -45,7 +49,8 @@ You do not need to know any 3D software first. Everything has a tooltip: hold th
 ## Features
 
 - **Modeling**: primitives (cube, plane, cylinder, cone, sphere, torus, butterfly), extrude, subdivide, mirror, weld, flat shading, automatic UV unwrap, polygon reduction, move / rotate / scale gizmos with snapping.
-- **Edit mode** (`Tab`): vertices, edges and polygons as in Blender. Box select, loops and rings, grow and shrink, hide and reveal; `G` / `R` / `S` with axis locks, typed values and proportional editing; extrude, inset, bevel, loop cut, knife, bridge, merge, split, separate, symmetrize, seams and UV unwrap from seams. Quads and n-gons are kept.
+- **Edit mode** (`Tab`): vertices, edges and polygons as in Blender. Box select, loops and rings, grow and shrink, hide and reveal; `G` / `R` / `S` with axis locks, typed values and proportional editing; extrude (also each face on its own, `Alt+E`, or along normals), inset, bevel, loop cut, knife, bridge, merge, split, separate, symmetrize, seams and UV unwrap from seams. Quads and n-gons are kept.
+- **Shape tools**: *Spin* (lathe a profile into a vase, a lantern or a column), *Solidify* (even thickness), *Array* (repeat along an axis, welded if you like), *Poke* and *To sphere*.
 - **Boolean operations**: union, difference and intersection of two objects, or inside one mesh.
 - **Reference pictures**: front, side, top or facing the view, with size and opacity. Never rendered or exported.
 - **Import**: OBJ, STL, PLY, glTF and GLB (with skeletons).
@@ -55,10 +60,13 @@ You do not need to know any 3D software first. Everything has a tooltip: hold th
 - **Posing and animation**: bones, inverse kinematics (`Shift+I`), frame-by-frame animation, and a graph editor (the *Curves* tab) for keys and easing.
 - **Scene layers**: pictures behind and in front of the 3D scene (a sky behind, grass in front).
 - **Time of day**: a sun by day, a moon by night; light, sky and fog follow the hour.
+- **Lamps**: point lamps and spotlights with presets (candle, lantern, campfire, torch, neon, moonbeam, firefly…), flicker, halos, and lamps that hang on an object and follow it.
+- **Modern effects**, all optional on top of the retro picture: light per pixel, a soft or filmic tone curve, bloom, contact shadows, lamp halos and a CRT screen. **Style presets** in one click: PS1 Classic, Lo-Fi Calm, Clean Low-Poly, Horror Fog, Night Glow, CRT Arcade.
 - **Shadows**: Off, Blob (the soft spot under things, very PS1) or Cast (real soft shadows, with quality and softness controls).
 - **PSX render look**: affine textures, vertex snapping, colour depth, dithering, fog, low resolution.
 - **Output**: PNG, JPEG, BMP, TGA, PPM, GIF and AVI. Nothing else has to be installed.
-- **Comfort**: radial menu on `Space` (as in Krita), command palette (`Ctrl+K`), remappable hotkeys, undo/redo, autosave and crash recovery, saved layout, UI scale, highlight under the mouse, colour themes (stored as files you can share), "What's new" after an update, seasonal splash screens.
+- **Comfort**: radial menu on `Space` (as in Krita), command palette (`Ctrl+K`), remappable hotkeys, undo/redo, autosave and crash recovery, saved layout, UI scale, highlight under the mouse, its own title bar merged with the menu, "What's new" after an update, seasonal splash screens.
+- **Themes** as text files you can share: colours of every part of the window, corner radii, shadows and spacing, pictures behind see-through panels or in the title bar, picked up live while you edit them. Seven built in plus two examples with pictures. See [docs/THEMES.md](docs/THEMES.md).
 - **Discord status** (optional, off by default for the project name): "Playing Jank!" with the mode and the time. It talks only to the Discord app on your computer. See [docs/DISCORD.md](docs/DISCORD.md).
 
 Everything, including the renderer and the image and video encoders, is built into the program.
@@ -97,7 +105,7 @@ More detail (system packages, tests, options) is in [BUILDING.md](BUILDING.md).
 4. Press `Ctrl+N` to start your own project, then `Shift+A` to add a cube.
 5. Press `2`, pick a colour and paint on the cube. Press `Ctrl+S` to save.
 
-More samples are in `demo/`: `butterfly.jank` (a rigged butterfly over a meadow) and `friend.jank` (a singing worm with a skeleton and frame-by-frame animation).
+More samples are in `demo/`: `night-shrine.jank` (a shrine at night lit by about 25 lamps, in the Night Glow style), `butterfly.jank` (a rigged butterfly over a meadow) and `friend.jank` (a singing worm with a skeleton and frame-by-frame animation).
 
 Stuck? Press `Ctrl+K` and type what you want to do. A full walkthrough is in the [user guide](docs/USER_GUIDE.md).
 
@@ -132,8 +140,8 @@ Stuck? Press `Ctrl+K` and type what you want to do. A full walkthrough is in the
 ```
 core/    psxcore: the engine (geometry, renderer, codecs, project format). Standard library only.
 app/     jank: the window and interface (egui / eframe).
-demo/    sample projects (bunnies, butterfly, friend).
-docs/    user guide, architecture, file format, design system, versioning, Discord, roadmap, splash guide.
+demo/    sample projects (night shrine, bunnies, butterfly, friend).
+docs/    user guide, themes, architecture, file format, design system, versioning, Discord, roadmap, splash guide.
 tools/   helper scripts.
 ```
 
@@ -141,7 +149,7 @@ Developers: start with [ARCHITECTURE](docs/ARCHITECTURE.md) and [CONTRIBUTING](C
 
 ## Documentation
 
-[User guide](docs/USER_GUIDE.md) · [Building](BUILDING.md) · [Architecture](docs/ARCHITECTURE.md) · [File format](docs/FILE_FORMAT.md) · [Design system](docs/DESIGN_SYSTEM.md) · [Splash guide](docs/SPLASH_GUIDE.md) · [Discord status](docs/DISCORD.md) · [Versioning](docs/VERSIONING.md) · [Security](SECURITY.md) · [Contributing](CONTRIBUTING.md) · [Roadmap](docs/ROADMAP.md) · [Changelog](CHANGELOG.md)
+[User guide](docs/USER_GUIDE.md) · [Themes](docs/THEMES.md) · [Building](BUILDING.md) · [Architecture](docs/ARCHITECTURE.md) · [File format](docs/FILE_FORMAT.md) · [Design system](docs/DESIGN_SYSTEM.md) · [Splash guide](docs/SPLASH_GUIDE.md) · [Discord status](docs/DISCORD.md) · [Versioning](docs/VERSIONING.md) · [Security](SECURITY.md) · [Contributing](CONTRIBUTING.md) · [Roadmap](docs/ROADMAP.md) · [Changelog](CHANGELOG.md)
 
 ## Licence
 

@@ -1,0 +1,49 @@
+# Shrine Night: an example Jank! theme with a picture behind see-through panels and lantern-warm colours.
+# The picture is a render of the Night Shrine demo scene (demo/night-shrine.jank).
+# Copy it, change it and save: Jank picks the change up while it runs. See docs/THEMES.md for every key.
+name = Shrine Night
+light = false
+accent = #ffb25c
+
+bg0 = #0c0a12
+bg1 = #14111d
+bg2 = #201a2c
+bg3 = #2c2440
+line = #3e3354
+line_soft = #241d33
+text = #f2e8dc
+dim = #a8998f
+hilite = #3d3150
+shade = #07060b
+warn = #ffc46b
+viewport = #0a0810
+
+titlebar = #120e1b
+titlebar_text = #ffcf96
+ribbon = #0e0b15
+statusbar = #120e1b
+statusbar_text = #d9b994
+window = #181322
+window_border = #5c4466
+tooltip = #2a1f2f
+tooltip_text = #ffe7c7
+playhead = #ff8f4a
+selection = #ff9d57
+
+radius = 4
+window_radius = 9
+menu_radius = 6
+shadow = 1.3
+shadow_blur = 24
+bevel = 0.5
+panel_opacity = 0.82
+
+background = shrine-night.png
+background_mode = cover
+background_opacity = 1
+titlebar_image = shrine-night.png
+titlebar_mode = cover
+titlebar_opacity = 0.35
+viewport_image = shrine-night.png
+viewport_mode = cover
+viewport_opacity = 0.25

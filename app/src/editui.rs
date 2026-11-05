@@ -40,12 +40,49 @@ pub struct EditUi {
     pub merge_dist: f32,
     pub bevel_width: f32,
     pub smooth: f32,
+    /// Spin: degrees, steps, axis (0..=2 object X/Y/Z, 3 view) and whether it turns around the selection.
+    pub spin_angle: f32,
+    pub spin_steps: u32,
+    pub spin_axis: usize,
+    pub spin_at_selection: bool,
+    pub solidify: f32,
+    pub array_count: u32,
+    pub array_axis: usize,
+    /// Distance between copies in sizes of the selection (1 = touching).
+    pub array_gap: f32,
+    pub array_weld: bool,
+    pub poke_depth: f32,
+    pub sphere: f32,
     /// The press that confirmed a modal tool: its release must not select anything.
     pub suppress_release: bool,
 }
 impl Default for EditUi {
     fn default() -> Self {
-        EditUi { tool: EditTool::Select, oneshot: false, press: None, boxing: None, cuts: 1, mouse: None, view: (1, 1), last_update: None, merge_dist: 0.001, bevel_width: 0.1, smooth: 0.5, suppress_release: false }
+        EditUi {
+            tool: EditTool::Select,
+            oneshot: false,
+            press: None,
+            boxing: None,
+            cuts: 1,
+            mouse: None,
+            view: (1, 1),
+            last_update: None,
+            merge_dist: 0.001,
+            bevel_width: 0.1,
+            smooth: 0.5,
+            spin_angle: 360.0,
+            spin_steps: 12,
+            spin_axis: 1,
+            spin_at_selection: false,
+            solidify: 0.05,
+            array_count: 3,
+            array_axis: 0,
+            array_gap: 1.0,
+            array_weld: true,
+            poke_depth: 0.0,
+            sphere: 1.0,
+            suppress_release: false,
+        }
     }
 }
 
@@ -139,6 +176,44 @@ impl App {
             MeshDuplicate => {
                 self.edui.last_update = None;
                 self.ed.edit_duplicate_begin(m, w, h);
+            }
+            MeshExtrudeIndividual | MeshExtrudeNormals => {
+                self.edui.last_update = None;
+                if !self.ed.edit_extrude_faces_begin(id == MeshExtrudeIndividual, m, w, h) {
+                    self.info("Select faces to extrude them along their normals");
+                }
+            }
+            MeshSpin => {
+                let e = &self.edui;
+                let n = self.ed.edit_spin(e.spin_angle, e.spin_steps as usize, e.spin_axis, e.spin_at_selection);
+                if n > 0 {
+                    self.info(format!("Spin: {n} new faces"));
+                } else {
+                    self.info("Spin: select a profile (connected edges) or faces first");
+                }
+            }
+            MeshSolidify => {
+                let t = self.edui.solidify;
+                if self.ed.edit_op(|m| m.solidify(t)).unwrap_or(0) == 0 {
+                    self.info("Solidify: there are no faces to thicken");
+                }
+            }
+            MeshArray => {
+                let e = &self.edui;
+                let n = self.ed.edit_array(e.array_count as usize, e.array_axis, e.array_gap, e.array_weld);
+                self.info(format!("Array: {n} copies"));
+            }
+            MeshPoke => {
+                let d = self.edui.poke_depth;
+                if self.ed.edit_op(|m| m.poke(d)).unwrap_or(0) == 0 {
+                    self.info("Poke: select faces first");
+                }
+            }
+            MeshToSphere => {
+                let f = self.edui.sphere;
+                if self.ed.edit_op(|m| m.to_sphere(f)).unwrap_or(0) == 0 {
+                    self.info("To sphere: select a few vertices first");
+                }
             }
             MeshLoopCut => {
                 self.edui.tool = EditTool::LoopCut;
@@ -744,6 +819,8 @@ impl App {
             ui.horizontal_wrapped(|ui| {
                 for (id, l, i) in [
                     (CommandId::MeshExtrude, "Extrude", Some(Icon::Extrude)),
+                    (CommandId::MeshExtrudeIndividual, "Extrude each", None),
+                    (CommandId::MeshExtrudeNormals, "Along normals", None),
                     (CommandId::MeshInset, "Inset", Some(Icon::Inset)),
                     (CommandId::MeshBevel, "Bevel", Some(Icon::Bevel)),
                     (CommandId::MeshLoopCut, "Loop cut", Some(Icon::LoopCut)),
@@ -784,6 +861,59 @@ impl App {
             if let Some(s) = self.ed.edit.as_mut() {
                 toggle_tip(ui, &mut s.inset_individual, "Inset each face on its own", acc, "Off: the selected faces are inset as one region");
             }
+        });
+        section(ui, "Shape", acc, |ui| {
+            dim(ui, "Spin sweeps a profile around an axis, Solidify adds thickness, Array repeats the selection.");
+            let axis_row = |ui: &mut Ui, label: &str, value: &mut usize, n: usize| {
+                ui.horizontal(|ui| {
+                    ui.label(egui::RichText::new(label).color(DIM()));
+                    for (i, l) in ["X", "Y", "Z", "View"].iter().enumerate().take(n) {
+                        if Btn::new(l).accent(acc).on(*value == i).show(ui).clicked() {
+                            *value = i;
+                        }
+                    }
+                });
+            };
+            ui.horizontal(|ui| {
+                if b(ui, self, CommandId::MeshSpin, "Spin", Some(Icon::Spin)) {
+                    run = Some(CommandId::MeshSpin);
+                }
+                ui.add(egui::DragValue::new(&mut self.edui.spin_angle).speed(1.0).range(-360.0..=360.0).suffix("°").max_decimals(1)).on_hover_text("How far to turn (360° closes the ring)");
+                ui.add(egui::DragValue::new(&mut self.edui.spin_steps).speed(0.2).range(1..=128).suffix(" steps")).on_hover_text("Segments around the axis");
+            });
+            axis_row(ui, "axis", &mut self.edui.spin_axis, 4);
+            toggle_tip(ui, &mut self.edui.spin_at_selection, "Around the selection's centre", acc, "Off: around the object's centre (its origin), the usual choice for a lathe profile");
+            ui.add_space(4.0);
+            ui.horizontal(|ui| {
+                if b(ui, self, CommandId::MeshSolidify, "Solidify", Some(Icon::Solidify)) {
+                    run = Some(CommandId::MeshSolidify);
+                }
+                ui.add(egui::DragValue::new(&mut self.edui.solidify).speed(0.002).range(-10.0..=10.0).max_decimals(3)).on_hover_text("Thickness (negative grows outwards)");
+            });
+            ui.horizontal(|ui| {
+                if b(ui, self, CommandId::MeshArray, "Array", Some(Icon::Array)) {
+                    run = Some(CommandId::MeshArray);
+                }
+                ui.add(egui::DragValue::new(&mut self.edui.array_count).speed(0.1).range(2..=64).prefix("× ")).on_hover_text("Number of pieces, the original included");
+                ui.add(egui::DragValue::new(&mut self.edui.array_gap).speed(0.01).range(-10.0..=10.0).max_decimals(2).suffix(" size")).on_hover_text("Step between copies in sizes of the selection: 1 = touching, 1.5 = half a size apart");
+            });
+            ui.horizontal(|ui| {
+                axis_row(ui, "along", &mut self.edui.array_axis, 3);
+                toggle_tip(ui, &mut self.edui.array_weld, "Weld", acc, "Merge the vertices where neighbouring copies touch");
+            });
+            ui.add_space(4.0);
+            ui.horizontal(|ui| {
+                if b(ui, self, CommandId::MeshPoke, "Poke", Some(Icon::Poke)) {
+                    run = Some(CommandId::MeshPoke);
+                }
+                ui.add(egui::DragValue::new(&mut self.edui.poke_depth).speed(0.005).range(-10.0..=10.0).max_decimals(3)).on_hover_text("How far the middle vertex rises (0 keeps the face flat)");
+            });
+            ui.horizontal(|ui| {
+                if b(ui, self, CommandId::MeshToSphere, "To sphere", Some(Icon::Sphere)) {
+                    run = Some(CommandId::MeshToSphere);
+                }
+                ui.add(egui::DragValue::new(&mut self.edui.sphere).speed(0.01).range(0.0..=1.0).max_decimals(2)).on_hover_text("0 leaves the shape, 1 makes a perfect ball");
+            });
         });
         section(ui, "Remove and merge", acc, |ui| {
             ui.horizontal_wrapped(|ui| {
